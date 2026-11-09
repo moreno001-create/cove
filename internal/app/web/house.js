@@ -119,6 +119,7 @@ function recipeView(r, c) {
     r.steps ? el("h4", { text: "Steps" }) : null, r.steps ? el("div", { class: "md" }, markdown(r.steps)) : null),
   buttons: [{ label: "Delete", danger: true, action: async () => { if (await confirmBox("Delete this recipe?", "Meals planned with it keep its name.", "Delete", true)) { await HH.del("recipe", r.id).catch(fail); showMeals(c); } else return false; } },
     { label: "Edit", action: () => setTimeout(() => recipeDialog(r, c), 50) }, "grow",
+    { label: "Cook", action: () => setTimeout(() => cookMode(r), 50) },
     { label: "Ingredients to the shopping list", action: async () => { try { const x = await api("POST", "/api/meals/shopping", { recipes: [r.id] }); toast(`${x.added} added to the shopping list`); } catch (e) { fail(e); } return false; } },
     { label: "Done", primary: true }] });
 }
@@ -180,7 +181,12 @@ async function showChores(c) {
     b.recent.length ? el("h3", { class: "sec", text: "Done lately" }) : null,
     b.recent.length ? el("div", { class: "card items-list" }, b.recent.slice(0, 12).map(r => el("div", {}, icon("check"), el("div", { class: "grow" }, el("b", { text: r.who }), " " + r.chore),
       el("span", { class: "muted", style: { fontSize: "12.5px" }, text: fmtDate(r.at * 1000) + (r.points ? ` · +${r.points}` : "") })))) : null);
-  rewardsSection(c).then(sec => { if (sec && location.hash.startsWith("#/chores")) c.append(sec); });
+  rewardsSection(c).then(async sec => {
+    if (!location.hash.startsWith("#/chores")) return;
+    if (sec) c.append(sec);
+    const goals = await goalsSection(c);
+    if (goals && location.hash.startsWith("#/chores")) c.append(goals);
+  });
 }
 
 function choreDialog(ch, c) {
@@ -214,7 +220,7 @@ function choreDialog(ch, c) {
 
 // --- photos: the timeline, albums, the map, and backing up a phone
 
-const PHOTOS = { tab: "timeline", list: null, sel: new Set() };
+const PHOTOS = { tab: "timeline", list: null, sel: new Set(), q: "" };
 // family guests only see albums (their own files aren't part of their Cove)
 
 async function showPhotos(c, rest) {
@@ -223,7 +229,10 @@ async function showPhotos(c, rest) {
   const tabs = el("div", { class: "seg" }, [["timeline", "All photos"], ["albums", "Albums"], ["map", "Map"]].map(([t, l]) =>
     el("button", { class: PHOTOS.tab === t ? "on" : "", onclick: () => { PHOTOS.tab = t; showPhotos(c); } }, l)));
   const backup = el("input", { type: "file", multiple: true, accept: "image/*,video/*", class: "hide", onchange: e => backUpPhotos([...e.target.files], c) });
-  const head = pageHead("Photos", null, tabs, backup, btn("Back up this phone", "upload", () => backup.click(), "primary"));
+  const find = el("input", { type: "search", class: "input", value: PHOTOS.q || "", placeholder: S.me.vision ? "Find: beach, birthday cake, the dog…" : "Find photos", style: { width: "240px" },
+    onkeydown: e => { if (e.key === "Enter") { PHOTOS.q = e.target.value.trim(); PHOTOS.tab = "timeline"; showPhotos(c); } } });
+  const head = pageHead("Photos", null, S.me.user.guest ? null : find, tabs, btn("Year in review", "star", () => { location.hash = "#/year"; }, "ghost"), backup,
+    btn("Back up this phone", "upload", () => backup.click(), "primary"));
   if (PHOTOS.tab === "albums") {
     let albums;
     try { albums = await api("GET", "/api/albums"); } catch (e) { return fail(e); }
@@ -235,7 +244,12 @@ async function showPhotos(c, rest) {
     return;
   }
   put(c, head, el("p", { class: "muted", text: "Looking through your files…" }));
-  try { PHOTOS.list = await api("GET", "/api/photos"); } catch (e) { return fail(e); }
+  try { PHOTOS.list = await api("GET", "/api/photos" + (PHOTOS.q ? "?q=" + encodeURIComponent(PHOTOS.q) : "")); } catch (e) { return fail(e); }
+  if (PHOTOS.q && !PHOTOS.list.length) {
+    put(c, head, emptyCard("search", "No photos of “" + PHOTOS.q + "”", S.me.vision ? "Cove reads new photos in the background: give it a while after adding many." : "Finding photos by what's in them needs a vision model (Admin → AI)."),
+      btn("Show all photos", null, () => { PHOTOS.q = ""; showPhotos(c); }, "ghost"));
+    return;
+  }
   const list = PHOTOS.list;
   if (!list.length) { put(c, head, emptyCard("image", "No photos yet", "Back up your phone's camera roll, or upload pictures to any folder: they all show here, by the day they were taken.")); return; }
   if (PHOTOS.tab === "map") {
@@ -559,7 +573,8 @@ async function showRecords(c) {
   };
   const by = {};
   for (const r of list) (by[r.category || "other"] = by[r.category || "other"] || []).push(r);
-  put(c, pageHead("Home records", "Warranties, manuals, serial numbers, passports. Cove reminds you before things run out.", btn("Add", "plus", () => recordDialog(null, c), "primary")),
+  put(c, pageHead("Home records", "Warranties, manuals, serial numbers, passports. Cove reminds you before things run out.",
+    btn("Insurance list", "download", () => { location.hash = "#/inventory"; }), btn("Add", "plus", () => recordDialog(null, c), "primary")),
     ...(list.length ? REC_CATS.filter(([k]) => by[k]).flatMap(([k, label]) => [el("h3", { class: "sec", text: label }),
       el("div", { class: "card items-list" }, by[k].sort((a, b) => a.name.localeCompare(b.name)).map(r => el("div", { style: { cursor: "pointer" }, onclick: () => recordDialog(r, c) },
         icon(k === "document" ? "key" : k === "vehicle" ? "place" : "file"),

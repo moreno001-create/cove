@@ -46,6 +46,7 @@ func (s *Server) tools(u user) []tool {
 		t("add_task", "Add a to-do to the user's task list.", obj([]string{"title"}, map[string]any{
 			"title": str("the task"), "due": str("YYYY-MM-DD, optional"), "for": str("the person it's for, optional")})),
 		t("put_on_fridge", "Put a note on the family fridge (the notice board everyone sees).", obj([]string{"text"}, map[string]any{"text": str("the note")})),
+		t("post_to_family_chat", "Send a message to the family chat, as the user (\"on my way home, there in 20 minutes\").", obj([]string{"text"}, map[string]any{"text": str("the message")})),
 		t("plan_meal", "Plan a meal on the meal planner.", obj([]string{"date", "what"}, map[string]any{
 			"date": str("YYYY-MM-DD"), "meal": str("breakfast, lunch or dinner (default dinner)"), "what": str("the dish, or a saved recipe's name")})),
 	}
@@ -185,6 +186,11 @@ func (s *Server) act(ctx context.Context, u user, name, args string) string {
 			return "Couldn't put it on the fridge: " + errorOf(b)
 		}
 		return "Put a note on the fridge: “" + firstLine(get("text")) + "”."
+	case "post_to_family_chat":
+		if err := s.postToFamily(u, get("text")); err != nil {
+			return "Couldn't post it: " + err.Error()
+		}
+		return "Told the family: “" + firstLine(get("text")) + "”."
 	case "plan_meal":
 		m := meal{Date: get("date"), Slot: strings.ToLower(get("meal")), Text: get("what")}
 		for _, r := range hhItems[recipe](s, u, "recipe") {

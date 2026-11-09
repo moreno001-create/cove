@@ -115,6 +115,9 @@ function route() {
     case "school": return showSchool(c);
     case "sitter": return showSitter(c);
     case "print": return showPrint(c);
+    case "rides": return showRides(c);
+    case "year": return showYear(c, rest);
+    case "inventory": return showInventory(c);
     case "wishes": return showWishes(c);
     case "health": return showHealth(c);
     case "pantry": return showPantry(c);
@@ -686,6 +689,9 @@ async function showSearch(c, q) {
     openItem({ ...h });
   } }, el("div", { class: "name" }, kindIcon(h.kind), el("div", { style: { minWidth: 0 } }, el("div", { text: h.name }), h.snippet ? snippet(h.snippet) : el("div", { class: "muted", style: { fontSize: "12px" }, text: parentOf(h.path) }))),
     el("div", { class: "size", text: h.dir ? "" : fmtSize(h.size) })))));
+  if (r.photos && r.photos.length) sections.push(el("h3", { class: "sec", text: "Photos" }), el("div", { class: "pgrid" }, r.photos.map((p, i) => el("div", { class: "ph", title: p.caption || "",
+    onclick: () => openViewer({ items: r.photos, index: i, url: x => files.content(x.path), thumb: (x, w) => files.thumb(x.path, w), download: x => files.download(x.path) }) },
+    el("img", { src: files.thumb(p.path, 320), loading: "lazy", alt: p.caption || p.name })))));
   if (r.related && r.related.length) sections.push(el("h3", { class: "sec", text: "Related (by meaning)" }), el("div", { class: "card list" }, r.related.map(h => el("div", { class: "lrow", style: { gridTemplateColumns: "1fr 110px" }, onclick: () => {
     S.share = null; S.path = parentOf(h.path); S.items = [{ ...h }]; openItem({ ...h });
   } }, el("div", { class: "name" }, kindIcon(h.kind), el("div", { style: { minWidth: 0 } }, el("div", { text: h.name }), el("div", { class: "muted snip", text: h.snippet || parentOf(h.path) }))),
@@ -1872,21 +1878,23 @@ function aiAdmin() {
   const box = el("div", { class: "card section" }, el("h3", { text: "AI (Ask Cove and smart search)" }), el("p", { class: "muted", text: "Loading…" }));
   api("GET", "/api/admin/ai").then(st => {
     const url = el("input", { class: "input", value: st.config.url || "", placeholder: "http://host.docker.internal:1234/v1 (LM Studio) or http://host.docker.internal:11434/v1 (Ollama)" });
-    const model = el("select", { class: "input" }), embed = el("select", { class: "input" });
+    const model = el("select", { class: "input" }), embed = el("select", { class: "input" }), vision = el("select", { class: "input" });
     const fill = (ids) => {
       model.replaceChildren(el("option", { value: "", text: "— Off —" }), ...ids.filter(i => !/embed/i.test(i)).map(i => el("option", { value: i, text: i, selected: i === st.config.model })));
       embed.replaceChildren(el("option", { value: "", text: "— Off —" }), ...ids.filter(i => /embed/i.test(i)).map(i => el("option", { value: i, text: i, selected: i === st.config.embed })));
+      vision.replaceChildren(el("option", { value: "", text: "— Off —" }), ...ids.filter(i => !/embed/i.test(i)).map(i => el("option", { value: i, text: i + (/gemma|vl|vision|llava|pixtral|qwen2\.5-vl|minicpm/i.test(i) ? " (sees pictures)" : ""), selected: i === st.config.vision })));
     };
-    fill([st.config.model, st.config.embed].filter(Boolean));
+    fill([st.config.model, st.config.embed, st.config.vision].filter(Boolean));
     const load = async () => { try { const r = await api("GET", "/api/admin/ai/models?url=" + encodeURIComponent(url.value)); fill(r.models); toast(`${r.models.length} models found`); } catch (e) { fail(e); } };
     if (st.config.url) load();
     box.replaceChildren(el("h3", { text: "AI (Ask Cove and smart search)" }),
       el("p", { text: "Cove uses an AI server on your home network (LM Studio or Ollama). Questions and documents never leave your network." }),
       el("div", { class: "row", style: { alignItems: "flex-end" } }, el("div", { class: "field grow" }, el("label", { text: "Server address" }), url), el("button", { class: "btn", style: { marginBottom: "14px" }, onclick: load }, "Find models")),
       el("div", { class: "row" }, el("div", { class: "field" }, el("label", { text: "Model for answers" }), model), el("div", { class: "field" }, el("label", { text: "Model for smart search (embeddings)" }), embed)),
-      el("p", { class: "muted", style: { fontSize: "12.5px" }, text: `Smart search has read ${st.embedded} of ${st.documents} documents. ${st.ocr ? "Words in scans and photos are read with Tesseract." : "Reading words in scans and photos needs Tesseract in Cove's image."}` }),
+      el("div", { class: "field" }, el("label", { text: "Model that sees pictures (finding photos by what's in them)" }), vision),
+      el("p", { class: "muted", style: { fontSize: "12.5px" }, text: `Photos described: ${st.described || 0} of ${st.photos || 0}. Smart search has read ${st.embedded} of ${st.documents} documents. ${st.ocr ? "Words in scans and photos are read with Tesseract." : "Reading words in scans and photos needs Tesseract in Cove's image."}` }),
       el("button", { class: "btn primary", onclick: async () => {
-        try { await api("PUT", "/api/admin/ai", { url: url.value, model: model.value, embed: embed.value }); S.me = await api("GET", "/api/me"); drawShell(); route(); toast("Saved"); } catch (e) { fail(e); }
+        try { await api("PUT", "/api/admin/ai", { url: url.value, model: model.value, embed: embed.value, vision: vision.value }); S.me = await api("GET", "/api/me"); drawShell(); route(); toast("Saved"); } catch (e) { fail(e); }
       } }, "Save"));
   }).catch(e => box.replaceChildren(el("p", { text: e.message })));
   return box;

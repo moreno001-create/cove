@@ -103,6 +103,8 @@ var hhKinds = map[string]hhKind{
 	"upkeep":   {decode: decodeAs[upkeep]},
 	"sitter":   {decode: decodeAs[sitterInfo], adultsEdit: true},
 	"homework": {decode: decodeAs[homework]},
+	"goal":     {decode: decodeAs[goal], merge: goalMerge},
+	"ride":     {decode: decodeAs[ride]},
 }
 
 // --- the kinds
@@ -578,6 +580,9 @@ func (s *Server) saveHH(w http.ResponseWriter, r *http.Request, u user) {
 		row = old
 		row.Data, row.Private, row.Updated = data, in.Private, now
 	} else {
+		if k.merge != nil { // new records follow the same rules as changes (a kid's new goal starts at nothing saved)
+			data = k.merge(u, []byte("{}"), data)
+		}
 		res, err := s.db.Exec(`INSERT INTO hh (kind, owner, private, data, created, updated) VALUES (?, ?, ?, ?, ?, ?)`, kind, u.Name, in.Private, data, now, now)
 		if err != nil {
 			jsonError(w, http.StatusInternalServerError, err.Error())
@@ -629,6 +634,10 @@ func (s *Server) hhAdded(u user, kind string, v any, label string) {
 		people, text, link = x.Who, fmt.Sprintf("%s gave you a chore: %s", displayName(u), label), "#/chores"
 	case trip:
 		people, text, link = x.People, fmt.Sprintf("%s added you to a trip: %s", displayName(u), label), "#/trips"
+	case ride:
+		if x.Driver != "" && x.Driver != u.Name {
+			people, text, link = []string{x.Driver}, fmt.Sprintf("%s put you down to drive: %s on %s", displayName(u), label, x.Date), "#/rides"
+		}
 	case wish:
 		if x.For != "" && x.For != u.Name { // ideas for someone stay a surprise; tell the others
 			for _, p := range everyoneBut(s.db, u.Name) {
@@ -1192,6 +1201,7 @@ func (s *Server) householdReminders(from, to time.Time) {
 	s.familyReminders(from, to)
 	s.upkeepReminders(from, to)
 	s.homeworkReminders(from, to)
+	s.rideReminders(from, to)
 	// chores still to do at 4 in the afternoon
 	for _, name := range s.everyone() {
 		loc := s.location(name)

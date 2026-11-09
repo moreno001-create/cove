@@ -213,7 +213,7 @@ const MENU = {
   top: [["home", "home", "Home"], ["ask", "search", "Ask Cove"], ["chat", "mail", "Chat"], ["fridge", "pin", "Fridge"]],
   groups: [
     ["Files", [["files", "folder", "My files"], ["photos", "image", "Photos"], ["journal", "lock", "My journal"], ["recent", "clock", "Recent"], ["shared", "inbox", "Shared with me"], ["links", "share", "Shared links", "adult"]]],
-    ["Plans", [["calendar", "calendar", "Calendar"], ["tasks", "check", "Tasks"], ["meals", "text", "Meals"], ["shopping", "check", "Shopping"], ["chores", "star", "Chores"], ["trips", "place", "Trips"]]],
+    ["Plans", [["calendar", "calendar", "Calendar"], ["tasks", "check", "Tasks"], ["meals", "text", "Meals"], ["shopping", "check", "Shopping"], ["chores", "star", "Chores"], ["rides", "place", "Rides"], ["trips", "place", "Trips"]]],
     ["Family", [["contacts", "user", "Contacts"], ["notes", "edit", "Notes"], ["school", "text", "School"], ["wishes", "star", "Wish lists"], ["health", "clock", "Health"], ["sitter", "user", "Babysitter"]]],
     ["House", [["pantry", "inbox", "Pantry"], ["upkeep", "settings", "Maintenance"], ["records", "key", "Home records", "adult"], ["budget", "sheet", "Budget", "adult"]]],
   ],

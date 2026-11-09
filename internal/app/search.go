@@ -283,6 +283,7 @@ func (s *Server) readSoon(owner string) {
 		soonMu.Unlock()
 		s.indexUser(owner, 0)
 		s.embedPending(owner, 10*time.Minute)
+		s.describePending(owner, 10*time.Minute)
 	})
 }
 
@@ -312,6 +313,7 @@ func (s *Server) indexEvery(d time.Duration) {
 				log.Printf("indexing %s's documents didn't finish", u)
 			}
 			s.embedPending(u, 15*time.Minute)
+			s.describePending(u, 20*time.Minute)
 		}
 	}
 }
@@ -427,6 +429,18 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request, u user) {
 		}
 	}
 	out["related"] = related
+	// photos, by what's in them
+	photos := []photoMeta{}
+	if hits := s.searchPhotos(u.Name, q); len(hits) > 0 {
+		caps := s.photoCaptions(u.Name)
+		for _, ph := range s.photosOf(u.Name) {
+			if hits[ph.Path] && len(photos) < 40 {
+				ph.Caption = caps[ph.Path]
+				photos = append(photos, ph)
+			}
+		}
+	}
+	out["photos"] = photos
 	// Events (each once, at its first time)
 	events := []eventHit{}
 	cals, _ := s.calendars(u.Name)

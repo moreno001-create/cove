@@ -211,6 +211,7 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/devices", s.api(s.listDevices))
 	m.HandleFunc("POST /api/receipts", s.api(s.readReceipt))
 	m.HandleFunc("POST /shortcut", s.shortcut)
+	m.HandleFunc("POST /api/goals/{id}/add", s.api(s.toGoal))
 	m.HandleFunc("GET /api/shopping", s.api(s.shopping))
 	m.HandleFunc("POST /api/shopping/done", s.api(s.shoppingDone))
 	m.HandleFunc("POST /api/meals/suggest", s.api(s.suggestMeals))

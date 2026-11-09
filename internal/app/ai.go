@@ -38,9 +38,10 @@ CREATE TABLE IF NOT EXISTS embeddings (
 );`
 
 type aiConfig struct {
-	URL   string `json:"url"`   // http://host:1234/v1
-	Model string `json:"model"` // for answers
-	Embed string `json:"embed"` // for smart search ("" turns it off)
+	URL    string `json:"url"`    // http://host:1234/v1
+	Model  string `json:"model"`  // for answers
+	Embed  string `json:"embed"`  // for smart search ("" turns it off)
+	Vision string `json:"vision"` // a model that sees pictures, for finding photos by what's in them ("" off)
 }
 
 func (s *Server) aiConfig() aiConfig {
@@ -60,6 +61,8 @@ func (s *Server) aiConfig() aiConfig {
 				c.Model = v
 			case "embed":
 				c.Embed = v
+			case "vision":
+				c.Vision = v
 			}
 		}
 	}
@@ -278,7 +281,10 @@ func (s *Server) getAI(w http.ResponseWriter, r *http.Request, u user) {
 	c := s.aiConfig()
 	var docs, done int
 	s.db.QueryRow(`SELECT count(*), coalesce(sum(embedded), 0) FROM search_files`).Scan(&docs, &done)
-	writeJSON(w, http.StatusOK, map[string]any{"config": c, "documents": docs, "embedded": done, "ocr": ocrAvailable()})
+	var photos, described int
+	s.db.QueryRow(`SELECT count(*) FROM photo_meta`).Scan(&photos)
+	s.db.QueryRow(`SELECT count(*) FROM photo_described`).Scan(&described)
+	writeJSON(w, http.StatusOK, map[string]any{"config": c, "documents": docs, "embedded": done, "ocr": ocrAvailable(), "photos": photos, "described": described})
 }
 
 func (s *Server) putAI(w http.ResponseWriter, r *http.Request, u user) {
@@ -296,7 +302,7 @@ func (s *Server) putAI(w http.ResponseWriter, r *http.Request, u user) {
 		in.URL += "/v1"
 	}
 	old := s.aiConfig()
-	for k, v := range map[string]string{"url": in.URL, "model": strings.TrimSpace(in.Model), "embed": strings.TrimSpace(in.Embed)} {
+	for k, v := range map[string]string{"url": in.URL, "model": strings.TrimSpace(in.Model), "embed": strings.TrimSpace(in.Embed), "vision": strings.TrimSpace(in.Vision)} {
 		s.db.Exec(`INSERT INTO ai_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, k, v)
 	}
 	if old.Embed != in.Embed || old.URL != in.URL { // different vectors: make them again

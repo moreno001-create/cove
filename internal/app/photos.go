@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,6 +54,8 @@ type photoMeta struct {
 	Taken int64   `json:"taken"` // unix seconds
 	Lat   float64 `json:"lat,omitempty"`
 	Lon   float64 `json:"lon,omitempty"`
+	// Caption is what the home AI saw in it (for finding photos by what's in them).
+	Caption string `json:"caption,omitempty"`
 }
 
 // exifInfo reads when a JPEG was taken and where (0, 0 when it doesn't say).
@@ -251,6 +254,14 @@ func (s *Server) listPhotos(w http.ResponseWriter, r *http.Request, u user) {
 	list := s.photosOf(u.Name)
 	if list == nil {
 		list = []photoMeta{}
+	}
+	caps := s.photoCaptions(u.Name)
+	for i := range list {
+		list[i].Caption = caps[list[i].Path]
+	}
+	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
+		hits := s.searchPhotos(u.Name, q)
+		list = slices.DeleteFunc(list, func(p photoMeta) bool { return !hits[p.Path] })
 	}
 	writeJSON(w, http.StatusOK, list)
 }

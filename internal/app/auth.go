@@ -119,7 +119,7 @@ func (s *Server) ensureUser(u user) error {
 func (s *Server) me(w http.ResponseWriter, r *http.Request, u user) {
 	writeJSON(w, http.StatusOK, map[string]any{"user": u, "url": s.cfg.URL, "office": s.cfg.Collabora != "",
 		"version": s.cfg.Version, "devMode": s.cfg.DevUser != "", "ai": s.aiConfig().on(), "smart": s.aiConfig().Embed != "", "ocr": ocrAvailable(),
-		"home": s.haConfig().Token != "" && len(s.haConfig().Entities) > 0, "jellyfin": s.jellyConfig().Key != "", "call": s.setting("call.url") != "",
+		"home": s.haConfig().Token != "" && len(s.haConfig().Entities) > 0, "jellyfin": s.jellyConfig().Key != "", "call": s.setting("call.url") != "", "vision": s.aiConfig().Vision != "",
 		"backups": s.offsiteConfig().Repo != ""})
 }
 

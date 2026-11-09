@@ -779,3 +779,31 @@ ol.steps li { margin-bottom: 8px; }
   html, body { background: #fff !important; color: #000 !important; }
   .printweek th, .printweek td { border-color: #999; color: #000; }
 }
+
+/* cooking mode */
+.cook { position: fixed; inset: 0; z-index: 60; background: var(--bg); display: flex; flex-direction: column; padding: 16px 20px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+.cookbar { display: flex; align-items: center; gap: 12px; }
+.cookcount { color: var(--muted); }
+.cookstep { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 16px; }
+.cookstep p { font-size: clamp(22px, 4vw, 38px); line-height: 1.35; max-width: 900px; margin: 0; }
+.cooktimers { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 10px; }
+.cooktimer { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 20px; background: var(--sunk); font-size: 18px; }
+.cooktimer.ring { background: var(--danger); color: #fff; animation: pulse 1s infinite; }
+.cooknav { display: flex; justify-content: space-between; gap: 12px; }
+.cooknav .btn { flex: 1; justify-content: center; padding: 16px; font-size: 18px; }
+/* savings goals */
+.goal { padding: 14px 16px; }
+.usage.big { height: 12px; border-radius: 6px; margin-top: 10px; }
+.usage.big div { background: var(--ok); }
+/* the year in review */
+.year .yearhead { font-size: 44px; margin: 6px 0 14px; letter-spacing: -.02em; }
+.yeargrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.yeargrid figure { margin: 0; cursor: pointer; }
+.yeargrid img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; display: block; }
+.yeargrid figcaption { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.year blockquote { border-left: 3px solid var(--accent); margin: 8px 0; padding: 4px 12px; }
+/* the insurance list */
+.inventory table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.inventory th, .inventory td { border-bottom: 1px solid var(--line); padding: 6px; text-align: left; vertical-align: top; }
+.inventory td img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; }
+@media print { .cook { display: none; } .inventory th, .inventory td { border-color: #bbb; color: #000; } }
