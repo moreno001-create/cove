@@ -19,15 +19,14 @@
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
+/* dark */html.dark {
     --bg: #0f1218; --panel: #171b23; --sunk: #11151c; --text: #e7eaf0; --muted: #9aa3b2; --faint: #6b7383;
     --line: #262c37; --accent: #5b8cff; --accent-soft: #1d2a47; --hover: #1e232d; --danger: #f05252; --ok: #34c472;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
     --shadow-lg: 0 12px 40px rgba(0, 0, 0, .5);
     color-scheme: dark;
   }
-}
+
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -128,13 +127,16 @@ textarea.input { resize: vertical; min-height: 70px; }
 .k-slides { background: #ffedd5; color: #ea580c; }
 .k-archive { background: #f1f5f9; color: #475569; }
 .k-text, .k-code, .k-file { background: var(--sunk); color: var(--muted); }
-@media (prefers-color-scheme: dark) {
-  .k-folder { background: #1d2a47; color: #7aa2ff; } .k-image { background: #3a1e2f; color: #f472b6; }
-  .k-video { background: #2b2144; color: #a78bfa; } .k-audio { background: #3a2a14; color: #fbbf24; }
-  .k-pdf { background: #3b1d1d; color: #f87171; } .k-doc { background: #1c2a4a; color: #60a5fa; }
-  .k-sheet { background: #16321f; color: #4ade80; } .k-slides { background: #3a2414; color: #fb923c; }
-  .k-archive { background: #1f2630; color: #94a3b8; }
-}
+/* dark */html.dark .k-folder { background: #1d2a47; color: #7aa2ff; }
+html.dark .k-image { background: #3a1e2f; color: #f472b6; }
+html.dark .k-video { background: #2b2144; color: #a78bfa; }
+html.dark .k-audio { background: #3a2a14; color: #fbbf24; }
+html.dark .k-pdf { background: #3b1d1d; color: #f87171; }
+html.dark .k-doc { background: #1c2a4a; color: #60a5fa; }
+html.dark .k-sheet { background: #16321f; color: #4ade80; }
+html.dark .k-slides { background: #3a2414; color: #fb923c; }
+html.dark .k-archive { background: #1f2630; color: #94a3b8; }
+
 
 /* grid view */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
@@ -333,7 +335,8 @@ body.playing .content { padding-bottom: 180px; }
 .cb.round:checked { background: var(--accent); border-color: var(--accent); }
 .cb.round:checked::after { content: ""; width: 5px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: translateY(-1px) rotate(45deg); }
 .pill.late { background: #fee4e2; color: var(--danger); }
-@media (prefers-color-scheme: dark) { .pill.late { background: #3b1d1d; } }
+/* dark */html.dark .pill.late { background: #3b1d1d; }
+
 
 /* contacts */
 .contacts { display: grid; grid-template-columns: 320px 1fr; gap: 18px; align-items: start; }
@@ -379,7 +382,8 @@ img.avatar { display: block; }
 h3.sec { font-size: 13px; color: var(--muted); font-weight: 600; margin: 18px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
 .snip { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 mark { background: #fef08a; color: inherit; border-radius: 3px; padding: 0 1px; }
-@media (prefers-color-scheme: dark) { mark { background: #854d0e; } }
+/* dark */html.dark mark { background: #854d0e; }
+
 
 /* notes */
 .notes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
@@ -717,3 +721,16 @@ body.kiosk .content { padding: 18px 24px; }
   .kcols { grid-template-columns: 1fr; }
   .kslide { display: none; }
 }
+
+/* dark: the colored labels and cards made for light pages */
+html.dark .pill.money { background: #12321f; color: #4ade80; }
+html.dark .pill.warn { background: #3a2a10; color: #fbbf24; }
+html.dark .pill.gone { background: #3b1d1d; color: #f87171; }
+html.dark .device.on { background: #3a3110; border-color: #8a6d00; color: #fde68a; }
+html.dark .device.on small { color: #e3c25a; }
+html.dark .actdone { color: #4ade80; }
+html.dark .kev.meal b { color: #fb923c; }
+html.dark .bubble img, html.dark .fnote.photo { background: #1f2430; }
+html.dark .fnote { box-shadow: 0 2px 6px rgba(0,0,0,.45), 0 10px 24px rgba(0,0,0,.35); }
+.themebtn svg { transition: transform .3s; }
+.themebtn:hover svg { transform: rotate(-20deg); }

@@ -78,6 +78,11 @@ function drawShell() {
   $("top").replaceChildren(
     el("button", { class: "btn ghost icon menu", onclick: () => document.body.classList.toggle("nav-open"), "aria-label": "Menu" }, icon("menu")),
     el("div", { class: "search" }, icon("search"), q), el("div", { class: "grow" }),
+    el("button", { class: "btn ghost icon themebtn", id: "themebtn", title: "Light or dark", "aria-label": "Switch between light and dark", onclick: () => {
+      coveTheme.set(coveTheme.isDark() ? "light" : "dark");
+      put($("themebtn"), icon(coveTheme.isDark() ? "sun" : "moon"));
+      if (window.drawAppearance) drawAppearance();
+    } }, icon(coveTheme.isDark() ? "sun" : "moon")),
     el("button", { class: "btn ghost icon bell", id: "bell", "aria-label": "Notifications", onclick: e => notificationsPanel(e.currentTarget) }, icon("bell"), el("span", { class: "badge hide", id: "badge" })));
   api("GET", "/api/settings").then(st => { if (st.tz !== tz) api("PUT", "/api/settings", { ...st, tz }); }).catch(() => {}); // reminders go out in this time zone
   pollNotifications();
@@ -796,6 +801,7 @@ async function showSettings(c) {
         el("div", { style: { flex: 1 } }, el("div", { text: u.display || u.name, style: { fontWeight: 600 } }), el("div", { class: "muted", text: (u.email ? u.email + " · " : "") + "user name " + u.name })),
         el("a", { class: "btn", href: "/api/export" }, icon("download"), "Download everything"),
         S.me.devMode ? null : el("form", { method: "post", action: "/logout" }, el("button", { class: "btn" }, icon("logout"), "Sign out")))),
+    appearanceSettings(),
     notificationSettings(),
     (() => { const b = el("div"); api("GET", "/api/settings").then(st => put(b, briefingSettings(st, x => api("PUT", "/api/settings", x)))).catch(() => {}); return b; })(),
     el("div", { class: "card section" }, el("div", { class: "row", style: { alignItems: "flex-start" } },
@@ -1839,6 +1845,19 @@ async function disablePush() {
 // --- the fridge: the household's notice board
 
 const STICKY = { yellow: "#fff3a6", pink: "#ffd3e2", blue: "#cfe6ff", green: "#d4f5d0", orange: "#ffdcb5", purple: "#e6d9ff", white: "#ffffff" };
+
+function appearanceSettings() {
+  const box = el("div", { class: "seg" });
+  const draw = () => put(box, [["auto", "Automatic"], ["light", "Light"], ["dark", "Dark"]].map(([v, l]) =>
+    el("button", { class: coveTheme.get() === v ? "on" : "", style: { padding: "7px 14px" }, onclick: () => {
+      coveTheme.set(v); draw();
+      const b = $("themebtn"); if (b) put(b, icon(coveTheme.isDark() ? "sun" : "moon"));
+    } }, l)));
+  draw();
+  window.drawAppearance = draw;
+  return el("div", { class: "card section" }, el("h3", { text: "Appearance" }),
+    el("p", { class: "muted", text: "Automatic follows your phone or computer (dark at night if it does). The choice is kept on this device." }), box);
+}
 
 function aiAdmin() {
   const box = el("div", { class: "card section" }, el("h3", { text: "AI (Ask Cove and smart search)" }), el("p", { class: "muted", text: "Loading…" }));
