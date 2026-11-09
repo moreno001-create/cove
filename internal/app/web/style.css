@@ -757,3 +757,25 @@ html.dark .fnote { box-shadow: 0 2px 6px rgba(0,0,0,.45), 0 10px 24px rgba(0,0,0
 .people .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
 .people .who.in .dot { background: var(--ok); }
 .rgrid.rewards { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+
+/* shopping */
+.chore.shop { cursor: pointer; }
+.shopping.store .chore.shop { padding: 16px 18px; font-size: 19px; }
+.shopping.store .chore.shop input { width: 30px; height: 30px; }
+.shopping.store .aisle .sec { font-size: 14px; }
+/* babysitter page */
+.srow { margin-bottom: 6px; align-items: center; }
+.kidcard { padding: 12px; margin-bottom: 8px; box-shadow: none; display: flex; flex-direction: column; gap: 6px; }
+ol.steps li { margin-bottom: 8px; }
+/* the week on paper */
+.printweek table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+.printweek th, .printweek td { border: 1px solid var(--line); padding: 6px; vertical-align: top; text-align: left; }
+.printweek td div { margin-bottom: 3px; }
+.printweek h1 { font-size: 22px; }
+@media print {
+  .side, .top, .noprint { display: none !important; }
+  .shell { display: block; }
+  .content { padding: 0; overflow: visible; }
+  html, body { background: #fff !important; color: #000 !important; }
+  .printweek th, .printweek td { border-color: #999; color: #000; }
+}

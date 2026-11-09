@@ -86,6 +86,8 @@ async function showMeals(c) {
       btn("", "left", () => { MEALS.week = addDays(MEALS.week, -7); showMeals(c); }, "ghost icon"),
       el("span", { style: { fontWeight: 600, fontSize: "14px" }, text: MEALS.week.toLocaleDateString([], { month: "short", day: "numeric" }) + " – " + addDays(MEALS.week, 6).toLocaleDateString([], { month: "short", day: "numeric" }) }),
       btn("", "right", () => { MEALS.week = addDays(MEALS.week, 7); showMeals(c); }, "ghost icon"),
+      S.me.ai ? btn("Dinner ideas", "star", () => dinnerIdeas(c)) : null,
+      btn("Print", "download", () => { location.hash = "#/print"; }, "ghost"),
       btn("Shopping list", "check", async () => {
         try { const r = await api("POST", "/api/meals/shopping", { from, to }); toast(r.added ? `${r.added} things added to the fridge's shopping list` : "Everything's on the list already"); } catch (e) { fail(e); }
       }, "primary")),
@@ -213,9 +215,11 @@ function choreDialog(ch, c) {
 // --- photos: the timeline, albums, the map, and backing up a phone
 
 const PHOTOS = { tab: "timeline", list: null, sel: new Set() };
+// family guests only see albums (their own files aren't part of their Cove)
 
 async function showPhotos(c, rest) {
   if (rest && rest[0] === "album" && rest[1]) return showAlbum(c, rest[1]);
+  if (S.me.user.guest) PHOTOS.tab = "albums";
   const tabs = el("div", { class: "seg" }, [["timeline", "All photos"], ["albums", "Albums"], ["map", "Map"]].map(([t, l]) =>
     el("button", { class: PHOTOS.tab === t ? "on" : "", onclick: () => { PHOTOS.tab = t; showPhotos(c); } }, l)));
   const backup = el("input", { type: "file", multiple: true, accept: "image/*,video/*", class: "hide", onchange: e => backUpPhotos([...e.target.files], c) });
@@ -848,7 +852,7 @@ async function drawRoom(pane, id, c) {
   put(pane, 
     el("div", { class: "chead" }, el("button", { class: "btn ghost icon back", onclick: () => { location.hash = "#/chat"; } }, icon("left")),
       el("b", { text: r.room.name }), el("span", { class: "muted", style: { fontSize: "12.5px" }, text: r.room.members.length ? r.room.members.map(nameOf).join(", ") : "Everyone" }),
-      el("div", { class: "grow" }), r.room.createdBy === S.me.user.name || (S.me.user.admin && r.room.createdBy) ? btn("", "trash", async () => {
+      el("div", { class: "grow" }), S.me.call ? btn("Call the family", "video", () => callFamily()) : null, r.room.createdBy === S.me.user.name || (S.me.user.admin && r.room.createdBy) ? btn("", "trash", async () => {
         if (await confirmBox("Delete " + r.room.name + "?", "Its messages and photos go for good.", "Delete", true)) { await api("DELETE", "/api/chat/" + id).catch(fail); location.hash = "#/chat"; }
       }, "ghost icon") : null),
     msgs.childElementCount ? msgs : el("div", { class: "msgs empty-msgs", text: "Say hi 👋" }),

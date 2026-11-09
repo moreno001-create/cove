@@ -102,7 +102,7 @@ func (s *Server) admin(h func(http.ResponseWriter, *http.Request, user)) func(ht
 }
 
 func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request, u user) {
-	rows, err := s.db.Query(`SELECT name, display, email, admin, kid, quota, created, seen FROM users ORDER BY lower(coalesce(nullif(display, ''), name))`)
+	rows, err := s.db.Query(`SELECT name, display, email, admin, kid, guest, quota, created, seen FROM users ORDER BY lower(coalesce(nullif(display, ''), name))`)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -113,6 +113,7 @@ func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request, u user) {
 		Email   string `json:"email"`
 		Admin   bool   `json:"admin"`
 		Kid     bool   `json:"kid"`
+		Guest   bool   `json:"guest"`
 		Quota   int64  `json:"quota"`
 		Used    int64  `json:"used"`
 		Files   int    `json:"files"`
@@ -122,7 +123,7 @@ func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request, u user) {
 	var list []entry
 	for rows.Next() {
 		var e entry
-		if rows.Scan(&e.Name, &e.Display, &e.Email, &e.Admin, &e.Kid, &e.Quota, &e.Created, &e.Seen) == nil {
+		if rows.Scan(&e.Name, &e.Display, &e.Email, &e.Admin, &e.Kid, &e.Guest, &e.Quota, &e.Created, &e.Seen) == nil {
 			list = append(list, e)
 		}
 	}

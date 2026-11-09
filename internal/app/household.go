@@ -52,6 +52,7 @@ func migrateHousehold(db interface {
 	db.Exec(`ALTER TABLE fridge ADD COLUMN date TEXT NOT NULL DEFAULT ''`)
 	db.Exec(`ALTER TABLE search_files ADD COLUMN embedded INTEGER NOT NULL DEFAULT 0`)
 	db.Exec(`UPDATE hh SET private = 1 WHERE kind = 'journal'`) // the journal is personal now
+	db.Exec(`ALTER TABLE users ADD COLUMN guest INTEGER NOT NULL DEFAULT 0`)
 }
 
 type cleaner interface {
@@ -86,20 +87,22 @@ func decodeAs[T any, P interface {
 }
 
 var hhKinds = map[string]hhKind{
-	"recipe":  {decode: decodeAs[recipe]},
-	"meal":    {decode: decodeAs[meal]},
-	"chore":   {decode: decodeAs[chore], adultsEdit: true},
-	"record":  {decode: decodeAs[record], adultsOnly: true, privateOK: true},
-	"bill":    {decode: decodeAs[bill], adultsOnly: true},
-	"expense": {decode: decodeAs[expense], adultsOnly: true},
-	"trip":    {decode: decodeAs[trip]},
-	"wish":    {decode: decodeAs[wish], view: wishView, merge: wishMerge},
-	"med":     {decode: decodeAs[med], privateOK: true},
-	"health":  {decode: decodeAs[healthRecord], privateOK: true},
-	"pantry":  {decode: decodeAs[pantryItem]},
-	"journal": {decode: decodeAs[journal], private: true},
-	"reward":  {decode: decodeAs[reward], adultsEdit: true},
-	"upkeep":  {decode: decodeAs[upkeep]},
+	"recipe":   {decode: decodeAs[recipe]},
+	"meal":     {decode: decodeAs[meal]},
+	"chore":    {decode: decodeAs[chore], adultsEdit: true},
+	"record":   {decode: decodeAs[record], adultsOnly: true, privateOK: true},
+	"bill":     {decode: decodeAs[bill], adultsOnly: true},
+	"expense":  {decode: decodeAs[expense], adultsOnly: true},
+	"trip":     {decode: decodeAs[trip]},
+	"wish":     {decode: decodeAs[wish], view: wishView, merge: wishMerge},
+	"med":      {decode: decodeAs[med], privateOK: true},
+	"health":   {decode: decodeAs[healthRecord], privateOK: true},
+	"pantry":   {decode: decodeAs[pantryItem]},
+	"journal":  {decode: decodeAs[journal], private: true},
+	"reward":   {decode: decodeAs[reward], adultsEdit: true},
+	"upkeep":   {decode: decodeAs[upkeep]},
+	"sitter":   {decode: decodeAs[sitterInfo], adultsEdit: true},
+	"homework": {decode: decodeAs[homework]},
 }
 
 // --- the kinds
@@ -757,6 +760,7 @@ func (s *Server) addToShopping(u user, things []string) (int, error) {
 	}
 	if added > 0 {
 		s.putUp(u, fmt.Sprintf("%d things on the shopping list", added), "")
+		s.remember(things)
 	}
 	return added, nil
 }
@@ -1187,6 +1191,7 @@ func (s *Server) householdReminders(from, to time.Time) {
 	}
 	s.familyReminders(from, to)
 	s.upkeepReminders(from, to)
+	s.homeworkReminders(from, to)
 	// chores still to do at 4 in the afternoon
 	for _, name := range s.everyone() {
 		loc := s.location(name)

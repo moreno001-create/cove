@@ -617,6 +617,15 @@ func (s *Server) offsiteEvery() {
 			continue
 		}
 		last = now.Format("2006-01-02")
+		if now.Day() == 1 { // once a month: can it really be read back?
+			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Hour)
+			if err := s.checkOffsite(ctx); err != nil {
+				for _, a := range s.admins() {
+					s.notify(a, "The monthly off-site backup check found a problem: "+firstLine(err.Error()), "#/admin")
+				}
+			}
+			cancel()
+		}
 		if err := s.backUpOffsite(); err != nil {
 			log.Printf("off-site backup: %v", err)
 			for _, a := range s.admins() {

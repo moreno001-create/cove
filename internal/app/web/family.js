@@ -430,7 +430,8 @@ function connectAdmin() {
       field("Where (restic repository)", orepo), field("Backup password", opass), field("Keys for the storage (one per line)", oenv), field("Each night at", ohour),
       el("p", { class: "muted", style: { fontSize: "12.5px" }, text: st.last ? `Last backup ${fmtDate(st.last * 1000)}: ${st.ok ? `worked · ${st.count} kept · ${st.size}` : st.error}` : "No backup yet." }),
       el("div", { class: "row" }, btn("Save", null, async () => { try { await api("PUT", "/api/admin/offsite", { repo: orepo.value, password: opass.value, env: oenv.value, hour: +ohour.value }); toast("Saved"); } catch (e) { fail(e); } }, "primary"),
-        btn("Back up now", "upload", async () => { try { await api("POST", "/api/admin/offsite/run"); toast("Started: you'll get a notification when it's done"); } catch (e) { fail(e); } })));
+        btn("Back up now", "upload", async () => { try { await api("POST", "/api/admin/offsite/run"); toast("Started: you'll get a notification when it's done"); } catch (e) { fail(e); } }),
+        btn("Check it can be read back", "check", async () => { try { await api("POST", "/api/admin/offsite/check"); toast("Checking: you'll get a notification when it's done (it also runs on the 1st of each month)"); } catch (e) { fail(e); } })));
   }).catch(e => put(box, el("p", { text: e.message })));
   return box;
 }

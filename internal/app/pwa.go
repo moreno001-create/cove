@@ -50,8 +50,8 @@ func serviceWorker(w http.ResponseWriter, r *http.Request) {
 // The service worker: notifications pushed to the phone, and offline reading. The app's pages and the lists people
 // read on the go (tasks, notes, calendars) are answered from the network when there is one and from the last copy
 // when there isn't. Files and everything else always come from the server.
-const swSource = `const CACHE = "cove-v5";
-const SHELL = ["/", "/assets/theme.js", "/assets/style.css", "/assets/common.js", "/assets/app.js", "/assets/house.js", "/assets/family.js", "/assets/extras.js", "/assets/icon.svg", "/assets/icon-192.png"];
+const swSource = `const CACHE = "cove-v6";
+const SHELL = ["/", "/assets/theme.js", "/assets/style.css", "/assets/common.js", "/assets/app.js", "/assets/house.js", "/assets/family.js", "/assets/extras.js", "/assets/batch4.js", "/assets/icon.svg", "/assets/icon-192.png"];
 const OFFLINE = [/^\/api\/(me|tasks|notes|calendars|home|fridge|office|settings|chores|users)(\?|$)/, /^\/api\/hh\/(recipe|meal|trip|chore)(\?|$)/, /^\/api\/files\/content\?path=%2FNotes%2F/];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });
 self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));

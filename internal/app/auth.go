@@ -31,6 +31,7 @@ type user struct {
 	Email   string `json:"email"`
 	Admin   bool   `json:"admin"` // in Homeport's admins group
 	Kid     bool   `json:"kid"`   // an admin made this a kid's account: a simpler Cove, no money or public links
+	Guest   bool   `json:"guest"` // family who don't live here (grandparents): the calendar, shared albums, the fridge, chat
 	// Groups are the Homeport groups signing in reported (nil: unknown, leave them as they are).
 	Groups []string `json:"-"`
 }
@@ -48,7 +49,7 @@ func (s *Server) currentUser(r *http.Request) (user, bool) {
 		if s.ensureUser(u) != nil {
 			return u, false
 		}
-		s.db.QueryRow(`SELECT kid FROM users WHERE name = ?`, u.Name).Scan(&u.Kid)
+		s.db.QueryRow(`SELECT kid, guest FROM users WHERE name = ?`, u.Name).Scan(&u.Kid, &u.Guest)
 		return u, true
 	}
 	c, err := r.Cookie(sessionCookie)
@@ -58,8 +59,8 @@ func (s *Server) currentUser(r *http.Request) (user, bool) {
 	var u user
 	var expires int64
 	var seen int64
-	err = s.db.QueryRow(`SELECT u.name, u.display, u.email, u.admin, u.kid, u.seen, s.expires FROM sessions s JOIN users u ON u.name = s.user
-		WHERE s.id = ?`, hashHex(c.Value)).Scan(&u.Name, &u.Display, &u.Email, &u.Admin, &u.Kid, &seen, &expires)
+	err = s.db.QueryRow(`SELECT u.name, u.display, u.email, u.admin, u.kid, u.guest, u.seen, s.expires FROM sessions s JOIN users u ON u.name = s.user
+		WHERE s.id = ?`, hashHex(c.Value)).Scan(&u.Name, &u.Display, &u.Email, &u.Admin, &u.Kid, &u.Guest, &seen, &expires)
 	if err != nil || expires < time.Now().Unix() {
 		return user{}, false
 	}
@@ -80,6 +81,10 @@ func (s *Server) api(h func(http.ResponseWriter, *http.Request, user)) http.Hand
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Header.Get("X-Cove") != "1" {
 			jsonError(w, http.StatusForbidden, "Changes need the X-Cove header.")
+			return
+		}
+		if u.Guest && !u.Admin && !guestMay(r) {
+			jsonError(w, http.StatusForbidden, "That part of Cove is for the people who live here.")
 			return
 		}
 		h(w, r, u)
@@ -114,7 +119,8 @@ func (s *Server) ensureUser(u user) error {
 func (s *Server) me(w http.ResponseWriter, r *http.Request, u user) {
 	writeJSON(w, http.StatusOK, map[string]any{"user": u, "url": s.cfg.URL, "office": s.cfg.Collabora != "",
 		"version": s.cfg.Version, "devMode": s.cfg.DevUser != "", "ai": s.aiConfig().on(), "smart": s.aiConfig().Embed != "", "ocr": ocrAvailable(),
-		"home": s.haConfig().Token != "" && len(s.haConfig().Entities) > 0, "jellyfin": s.jellyConfig().Key != ""})
+		"home": s.haConfig().Token != "" && len(s.haConfig().Entities) > 0, "jellyfin": s.jellyConfig().Key != "", "call": s.setting("call.url") != "",
+		"backups": s.offsiteConfig().Repo != ""})
 }
 
 // --- signing in with Homeport (OpenID Connect, code flow with PKCE)

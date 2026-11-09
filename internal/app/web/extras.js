@@ -212,9 +212,9 @@ function welcomeTour(force) {
 const MENU = {
   top: [["home", "home", "Home"], ["ask", "search", "Ask Cove"], ["chat", "mail", "Chat"], ["fridge", "pin", "Fridge"]],
   groups: [
-    ["Files", [["files", "folder", "My files"], ["photos", "image", "Photos"], ["recent", "clock", "Recent"], ["shared", "inbox", "Shared with me"], ["links", "share", "Shared links", "adult"]]],
-    ["Plans", [["calendar", "calendar", "Calendar"], ["tasks", "check", "Tasks"], ["meals", "text", "Meals"], ["chores", "star", "Chores"], ["trips", "place", "Trips"]]],
-    ["Family", [["contacts", "user", "Contacts"], ["notes", "edit", "Notes"], ["journal", "lock", "My journal"], ["wishes", "star", "Wish lists"], ["health", "clock", "Health"]]],
+    ["Files", [["files", "folder", "My files"], ["photos", "image", "Photos"], ["journal", "lock", "My journal"], ["recent", "clock", "Recent"], ["shared", "inbox", "Shared with me"], ["links", "share", "Shared links", "adult"]]],
+    ["Plans", [["calendar", "calendar", "Calendar"], ["tasks", "check", "Tasks"], ["meals", "text", "Meals"], ["shopping", "check", "Shopping"], ["chores", "star", "Chores"], ["trips", "place", "Trips"]]],
+    ["Family", [["contacts", "user", "Contacts"], ["notes", "edit", "Notes"], ["school", "text", "School"], ["wishes", "star", "Wish lists"], ["health", "clock", "Health"], ["sitter", "user", "Babysitter"]]],
     ["House", [["pantry", "inbox", "Pantry"], ["upkeep", "settings", "Maintenance"], ["records", "key", "Home records", "adult"], ["budget", "sheet", "Budget", "adult"]]],
   ],
   bottom: [["kiosk", "grid", "Kitchen display"], ["activity", "restore", "Activity"], ["trash", "trash", "Trash"], ["settings", "settings", "Settings"], ["admin", "lock", "Admin", "admin"]],
@@ -222,7 +222,11 @@ const MENU = {
 const menuPref = (k, d) => { try { return JSON.parse(localStorage.getItem("cove.menu." + k) || "null") ?? d; } catch (_) { return d; } };
 const setMenuPref = (k, v) => { try { localStorage.setItem("cove.menu." + k, JSON.stringify(v)); } catch (_) {} };
 
+// GUEST_PAGES are what family guests (grandparents) see.
+const GUEST_PAGES = ["home", "calendar", "photos", "fridge", "chat", "settings"];
+
 function menuAllowed([id, , , who]) {
+  if (S.me.user.guest && !S.me.user.admin && !GUEST_PAGES.includes(id)) return false;
   if (who === "adult" && S.me.user.kid) return false;
   if (who === "admin" && !S.me.user.admin) return false;
   if (id === "ask" && !S.me.ai) return false;

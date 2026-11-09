@@ -111,6 +111,10 @@ function route() {
     case "chat": return showChat(c, rest);
     case "ask": return showAsk(c);
     case "upkeep": return showUpkeep(c);
+    case "shopping": return showShopping(c);
+    case "school": return showSchool(c);
+    case "sitter": return showSitter(c);
+    case "print": return showPrint(c);
     case "wishes": return showWishes(c);
     case "health": return showHealth(c);
     case "pantry": return showPantry(c);
@@ -313,6 +317,7 @@ function itemMenu(at, it) {
     { label: it.dir ? "Download as zip" : "Download", icon: "download", action: () => downloadItem(it) },
     { label: "Comments", icon: "text", action: () => commentsDialog(it) },
     !it.dir && extOf(it.name) === "zip" && !S.share ? { label: "Bring in photos", icon: "image", action: () => importPhotoZip(it.path) } : null,
+    S.me.backups && !S.share ? { label: "Bring back from backup", icon: "restore", action: () => restoreDialog(it) } : null,
     !it.dir && S.me.ai && !S.share && ["pdf", "image"].includes(it.kind) ? { label: "Sort this letter", icon: "mail", action: () => sortLetter(it.path) } : null,
     !it.dir && extOf(it.name) === "zip" && S.edit ? { label: "Unzip here", icon: "archive", action: async () => {
       try { const r = await api("POST", "/api/files/unzip?" + shareQ(), { path: it.path }); toast(`Unpacked ${r.files} files`); goFolder(r.path); } catch (e) { fail(e); }
@@ -801,6 +806,7 @@ async function showSettings(c) {
         S.me.devMode ? null : el("form", { method: "post", action: "/logout" }, el("button", { class: "btn" }, icon("logout"), "Sign out")))),
     appearanceSettings(),
     menuSettings(),
+    S.me.ai && !S.me.user.guest ? shortcutSettings() : null,
     notificationSettings(),
     (() => { const b = el("div"); api("GET", "/api/settings").then(st => put(b, briefingSettings(st, x => api("PUT", "/api/settings", x)))).catch(() => {}); return b; })(),
     el("div", { class: "card section" }, el("div", { class: "row", style: { alignItems: "flex-start" } },
@@ -1777,9 +1783,13 @@ async function showAdmin(c) {
         el("div", { style: { textAlign: "right", fontSize: "13px" } }, el("div", { text: fmtSize(u.used) + (u.quota ? " of " + fmtSize(u.quota) : "") }), limit(u),
           u.admin ? null : el("label", { class: "check", style: { justifyContent: "flex-end", margin: "6px 0 0" } }, el("input", { type: "checkbox", checked: u.kid, onchange: async e => {
             try { await api("PUT", `/api/admin/users/${encodeURIComponent(u.name)}/kid`, { kid: e.target.checked }); toast(e.target.checked ? (u.display || u.name) + " has a kid's account now" : "A regular account again"); } catch (err) { fail(err); }
-          } }), "Kid's account")))))),
+          } }), "Kid's account"),
+          u.admin ? null : el("label", { class: "check", style: { justifyContent: "flex-end", margin: "4px 0 0" } }, el("input", { type: "checkbox", checked: u.guest, onchange: async e => {
+            try { await api("PUT", `/api/admin/users/${encodeURIComponent(u.name)}/guest`, { guest: e.target.checked }); toast(e.target.checked ? (u.display || u.name) + " is a family guest: calendar, shared albums, the fridge and chat" : "A regular account again"); showAdmin(c); } catch (err) { fail(err); }
+          } }), "Family guest (grandparents)")))))),
     aiAdmin(),
     connectAdmin(),
+    callAdmin(),
     el("div", { class: "card section" }, el("h3", { text: "Links" }), el("p", { text: all.links.length ? "Every link anyone made. Ending one stops it working." : "Nobody has made a link yet." }),
       all.links.length ? el("div", { class: "items-list", style: { margin: "0 -20px -18px" } }, all.links.map(sh => el("div", {}, kindIcon(sh.dir ? "folder" : "file"),
         el("div", { class: "grow" }, el("div", { style: { fontWeight: 600 }, text: sh.name }), el("div", { class: "muted", style: { fontSize: "12.5px" }, text: `${sh.owner} · ${sh.path} · ${sh.downloads} download${sh.downloads === 1 ? "" : "s"} · made ${fmtDate(sh.created * 1000)}` }),
