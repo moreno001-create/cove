@@ -19,11 +19,19 @@ import (
 // one of those is always safe. And each person can download everything of theirs as one zip.
 
 func (s *Server) snapshotEvery(d time.Duration) {
+	wait := time.Minute // not in the middle of starting up
 	for {
+		select {
+		case <-s.done:
+			return
+		case <-time.After(wait):
+		}
+		s.bg.Add(1)
 		if err := s.snapshot(time.Now()); err != nil {
 			log.Printf("database snapshot: %v", err)
 		}
-		time.Sleep(d)
+		s.bg.Done()
+		wait = d
 	}
 }
 

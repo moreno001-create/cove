@@ -40,6 +40,9 @@ type Server struct {
 	endpoints *oidcEndpoints
 	office    *officeApps
 	locks     map[string]xwebdav.LockSystem // WebDAV locks, per user
+
+	done chan struct{}  // closed when the server stops: background jobs end
+	bg   sync.WaitGroup // jobs that write files, waited for on Close
 }
 
 func New(cfg Config) (*Server, error) {
@@ -64,7 +67,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{cfg: cfg, db: db, data: root, key: key, http: &http.Client{Timeout: 30 * time.Second},
-		mux: http.NewServeMux(), locks: map[string]xwebdav.LockSystem{}}
+		mux: http.NewServeMux(), locks: map[string]xwebdav.LockSystem{}, done: make(chan struct{})}
 	setTrusted(cfg.URL)
 	s.routes()
 	go s.cleanUpEvery(time.Hour)
@@ -77,6 +80,12 @@ func New(cfg Config) (*Server, error) {
 }
 
 func (s *Server) Close() error {
+	select {
+	case <-s.done:
+	default:
+		close(s.done)
+	}
+	s.bg.Wait()
 	s.data.Close()
 	return s.db.Close()
 }
