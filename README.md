@@ -48,6 +48,23 @@ Homeport account; phones and computers sync with app passwords.
   documents by an AI server on the home network (LM Studio, Ollama); "Ask Cove" on a document summarizes it.
   **Smart search** finds documents by meaning, with that server's embedding model.
 - **Kids' accounts** (set by an admin): a simpler Cove without money, home records or public links.
+- **Ask Cove does things**: "add milk to the shopping list", "put the dentist on Thursday at 3", "give Sam the dishes",
+  "turn off the porch light": it carries them out as you (with your rights) and says what it did. A microphone button
+  asks by voice (the browser's speech recognition).
+- **Morning briefing**: one notification at the time you choose: weather, events, dinner, your chores, medicines, bills
+  due, countdowns.
+- **Home Assistant**: lights, locks, the garage door and sensors on the home page and the kitchen display (kids can't
+  open locks or doors), solar and battery numbers (EG4 or any inverter Home Assistant knows), and the weather.
+- **Jellyfin**: "Continue watching" and what's new, on the home page.
+- **Kitchen display**: a page for a tablet on the wall: clock and weather, the week with dinners, today's chores to
+  tick, devices, the fridge, and a photo slideshow from an album.
+- **Wish lists**: everyone's list; "I'll get it" so nobody buys twice, and gift ideas the person never sees.
+- **Health**: medicines with dose reminders (for people and pets) and doses anyone can tick; checkups, vaccines and
+  vet visits with reminders when they're due again.
+- **Pantry**: scan barcodes with the phone (names from Open Food Facts), plus and minus; running low puts it on the
+  shopping list; "use it soon" reminders.
+- **Journal and memories**: a family journal with photos, and "on this day" photos and entries from past years.
+- **Off-site backup**: each night, files and database snapshots go to B2, S3 or another computer, encrypted with restic.
 
 ## Running it
 
@@ -61,6 +78,7 @@ It's meant to be installed from Homeport's catalog, which fills in everything. B
 | `COVE_DATA` | where files and the database go (default `/data`) |
 | `COVE_ADDR` | where it listens (default `:8080`) |
 | `COVE_AI_URL`, `COVE_AI_MODEL`, `COVE_AI_EMBED_MODEL` | the home AI server (`http://host:1234/v1`) and its models; also set in Admin → AI |
+| `COVE_RESTIC` | restic's program, for off-site backups (default `restic`, as in the image) |
 | `COVE_TESSERACT`, `COVE_OCR_LANG` | Tesseract's program (default `tesseract`, as in the image) and languages (default `eng`) |
 | `COVE_DEV_USER` | try it out without sign-in, as this user (never on a server others can reach) |
 

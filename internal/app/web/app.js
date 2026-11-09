@@ -56,8 +56,9 @@ async function boot() {
 const NAV = [["home", "home", "Home"], ["fridge", "pin", "Fridge"], ["chat", "mail", "Chat"], ["ask", "search", "Ask Cove"],
   ["-Files"], ["files", "folder", "My files"], ["photos", "image", "Photos"], ["recent", "clock", "Recent"], ["shared", "inbox", "Shared with me"], ["links", "share", "Shared links", "adult"],
   ["-Plans"], ["calendar", "calendar", "Calendar"], ["tasks", "check", "Tasks"], ["meals", "text", "Meals"], ["chores", "star", "Chores"], ["trips", "place", "Trips"],
-  ["-Home"], ["contacts", "user", "Contacts"], ["notes", "edit", "Notes"], ["records", "key", "Home records", "adult"], ["budget", "sheet", "Budget", "adult"],
-  ["-"], ["activity", "restore", "Activity"], ["trash", "trash", "Trash"], ["settings", "settings", "Settings"], ["admin", "lock", "Admin"]];
+  ["-Home"], ["contacts", "user", "Contacts"], ["notes", "edit", "Notes"], ["journal", "text", "Journal"], ["wishes", "star", "Wish lists"], ["health", "clock", "Health"], ["pantry", "inbox", "Pantry"],
+  ["records", "key", "Home records", "adult"], ["budget", "sheet", "Budget", "adult"],
+  ["-"], ["kiosk", "grid", "Kitchen display"], ["activity", "restore", "Activity"], ["trash", "trash", "Trash"], ["settings", "settings", "Settings"], ["admin", "lock", "Admin"]];
 
 function drawShell() {
   const u = S.me.user;
@@ -91,6 +92,7 @@ function route() {
   document.querySelectorAll("[data-nav]").forEach(b => b.classList.toggle("on", b.dataset.nav === (section === "search" ? "files" : section)));
   const c = $("content");
   c.onscroll = null;
+  if (section !== "kiosk") document.body.classList.remove("kiosk");
   if (section !== "shared" || !rest[0]) { S.share = null; S.shareInfo = null; }
   switch (section) {
     case "shared": {
@@ -109,6 +111,11 @@ function route() {
     case "trips": return showTrips(c, rest);
     case "chat": return showChat(c, rest);
     case "ask": return showAsk(c);
+    case "wishes": return showWishes(c);
+    case "health": return showHealth(c);
+    case "pantry": return showPantry(c);
+    case "journal": return showJournal(c);
+    case "kiosk": return showKiosk(c);
     case "activity": return showActivity(c);
     case "duplicates": return showDuplicates(c);
     case "notes": return showNotes(c, rest.length ? "/" + rest.map(decodeURIComponent).join("/") : "");
@@ -744,10 +751,10 @@ function notificationSettings() {
     el("div", { class: "field" }, el("label", { text: "On your phone, with ntfy (the address of a topic only you know)" }),
       el("div", { class: "copy" }, topic,
         el("button", { class: "btn", onclick: async () => {
-          try { await api("PUT", "/api/settings", { ntfy: topic.value, tz }); toast(topic.value ? "Saved" : "Phone notifications off"); } catch (e) { fail(e); }
+          try { await api("PUT", "/api/settings", { ...(await api("GET", "/api/settings")), ntfy: topic.value, tz }); toast(topic.value ? "Saved" : "Phone notifications off"); } catch (e) { fail(e); }
         } }, "Save"),
         el("button", { class: "btn", onclick: async () => {
-          try { await api("PUT", "/api/settings", { ntfy: topic.value, tz }); await api("POST", "/api/settings/test-ntfy"); toast("Sent: look at your phone"); } catch (e) { fail(e); }
+          try { await api("PUT", "/api/settings", { ...(await api("GET", "/api/settings")), ntfy: topic.value, tz }); await api("POST", "/api/settings/test-ntfy"); toast("Sent: look at your phone"); } catch (e) { fail(e); }
         } }, "Test"))),
     el("p", { class: "muted", style: { fontSize: "12.5px", margin: 0 }, text: "Install the ntfy app (or ntfy from Homeport's catalog for your own server), subscribe to the same topic, and paste its address here." }));
 }
@@ -790,6 +797,7 @@ async function showSettings(c) {
         el("a", { class: "btn", href: "/api/export" }, icon("download"), "Download everything"),
         S.me.devMode ? null : el("form", { method: "post", action: "/logout" }, el("button", { class: "btn" }, icon("logout"), "Sign out")))),
     notificationSettings(),
+    (() => { const b = el("div"); api("GET", "/api/settings").then(st => put(b, briefingSettings(st, x => api("PUT", "/api/settings", x)))).catch(() => {}); return b; })(),
     el("div", { class: "card section" }, el("div", { class: "row", style: { alignItems: "flex-start" } },
       el("div", { style: { flex: 1 } }, el("h3", { text: "Sync apps" }), el("p", { text: "Calendar apps, Finder, Windows and file-sync apps sign in with your user name and an app password, one per device. Revoking one stops just that device." })),
       el("button", { class: "btn primary", onclick: newPassword }, icon("plus"), "New app password")), pwList),
@@ -1604,6 +1612,7 @@ async function showHome(c) {
       el("button", { class: "qbtn", onclick: () => { location.hash = "#/fridge"; setTimeout(() => fridgeDialog(null, "note", $("content")), 400); } }, kindIcon("image"), "Fridge note")),
     h.fridge && h.fridge.length ? el("div", { class: "card hcard", style: { marginBottom: "16px" } }, el("div", { class: "hhead" }, icon("pin"), el("h3", { text: "On the fridge" }), el("div", { class: "grow" }), link("All", "#/fridge")),
       el("div", { class: "fridge small" }, h.fridge.map(n => fridgeCard(n, null, true)))) : null,
+    (() => { const b = el("div", { class: "hgrid extras" }); homeExtras(b); return b; })(),
     el("div", { class: "hgrid" },
       card("Coming up", "calendar", link("Calendar", "#/calendar"), events),
       card("Due soon", "check", link("Tasks", "#/tasks"), tasks),
@@ -1765,6 +1774,7 @@ async function showAdmin(c) {
             try { await api("PUT", `/api/admin/users/${encodeURIComponent(u.name)}/kid`, { kid: e.target.checked }); toast(e.target.checked ? (u.display || u.name) + " has a kid's account now" : "A regular account again"); } catch (err) { fail(err); }
           } }), "Kid's account")))))),
     aiAdmin(),
+    connectAdmin(),
     el("div", { class: "card section" }, el("h3", { text: "Links" }), el("p", { text: all.links.length ? "Every link anyone made. Ending one stops it working." : "Nobody has made a link yet." }),
       all.links.length ? el("div", { class: "items-list", style: { margin: "0 -20px -18px" } }, all.links.map(sh => el("div", {}, kindIcon(sh.dir ? "folder" : "file"),
         el("div", { class: "grow" }, el("div", { style: { fontWeight: 600 }, text: sh.name }), el("div", { class: "muted", style: { fontSize: "12.5px" }, text: `${sh.owner} · ${sh.path} · ${sh.downloads} download${sh.downloads === 1 ? "" : "s"} · made ${fmtDate(sh.created * 1000)}` }),
@@ -1789,7 +1799,7 @@ function onLive(topic) {
   const parts = location.hash.split("/"), sec = parts[1] || "home";
   if (topic === "chat") chatBadge();
   const views = { files: ["files", "shared", "recent", "home", "notes", "photos"], calendar: ["calendar", "home"], tasks: ["tasks", "home"], contacts: ["contacts"], fridge: ["fridge", "home"],
-    household: ["meals", "chores", "records", "budget", "trips"], chat: ["chat"], photos: ["photos"] };
+    household: ["meals", "chores", "records", "budget", "trips", "wishes", "health", "pantry", "journal", "kiosk"], chat: ["chat"], photos: ["photos"] };
   if (!(views[topic] || []).includes(sec)) return;
   // never pull the page out from under someone typing or looking at something
   if (topic === "chat" && sec === "chat" && CHAT.room) { // a new message: redraw the conversation, keeping what's being typed

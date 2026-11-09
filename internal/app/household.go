@@ -63,6 +63,9 @@ type hhKind struct {
 	adultsOnly bool // kids don't see it
 	adultsEdit bool // kids see it but don't change it
 	privateOK  bool
+	// view can hide a record from u or change what u sees of it; merge combines a change with what was there.
+	view  func(u user, row hhRow, m map[string]any) bool
+	merge func(u user, old, next []byte) []byte
 }
 
 func decodeAs[T any, P interface {
@@ -88,6 +91,11 @@ var hhKinds = map[string]hhKind{
 	"bill":    {decode: decodeAs[bill], adultsOnly: true},
 	"expense": {decode: decodeAs[expense], adultsOnly: true},
 	"trip":    {decode: decodeAs[trip]},
+	"wish":    {decode: decodeAs[wish], view: wishView, merge: wishMerge},
+	"med":     {decode: decodeAs[med], privateOK: true},
+	"health":  {decode: decodeAs[healthRecord], privateOK: true},
+	"pantry":  {decode: decodeAs[pantryItem]},
+	"journal": {decode: decodeAs[journal], privateOK: true},
 }
 
 // --- the kinds
@@ -133,7 +141,7 @@ type recipe struct {
 }
 
 func (r *recipe) clean() error {
-	r.Title, r.Steps, r.Link = clip(r.Title, 200), clip(r.Steps, 20000), clip(r.Link, 1000)
+	r.Title, r.Steps, r.Link = clip(r.Title, 200), clip(r.Steps, 20000), safeLink(r.Link)
 	r.Ingredients, r.Tags = trimList(r.Ingredients, 100), trimList(r.Tags, 20)
 	if r.Title == "" {
 		return fmt.Errorf("A recipe needs a name.")
@@ -275,7 +283,7 @@ type bill struct {
 }
 
 func (b *bill) clean() error {
-	b.Name, b.Payer, b.Category, b.Link = clip(b.Name, 200), clip(b.Payer, 64), clip(b.Category, 64), clip(b.Link, 1000)
+	b.Name, b.Payer, b.Category, b.Link = clip(b.Name, 200), clip(b.Payer, 64), clip(b.Category, 64), safeLink(b.Link)
 	b.Paid = trimList(b.Paid, 600)
 	if b.Name == "" {
 		return fmt.Errorf("A bill needs a name.")
@@ -491,7 +499,7 @@ func (s *Server) everyone() []string {
 }
 
 func (s *Server) listHH(w http.ResponseWriter, r *http.Request, u user) {
-	kind, _, ok := s.hhKindFor(w, r, u)
+	kind, k, ok := s.hhKindFor(w, r, u)
 	if !ok {
 		return
 	}
@@ -503,6 +511,9 @@ func (s *Server) listHH(w http.ResponseWriter, r *http.Request, u user) {
 		}
 		m := s.hhJSON(row)
 		if d, ok := m["date"].(string); ok && (from != "" && d < from || to != "" && d > to) {
+			continue
+		}
+		if k.view != nil && !k.view(u, row, m) {
 			continue
 		}
 		out = append(out, m)
@@ -541,7 +552,7 @@ func (s *Server) saveHH(w http.ResponseWriter, r *http.Request, u user) {
 	var row hhRow
 	if id := r.PathValue("id"); id != "" {
 		old, found := s.hhRow(kind, id)
-		if !found || old.Private && old.Owner != u.Name {
+		if !found || old.Private && old.Owner != u.Name || !visibleTo(k, u, old) {
 			jsonError(w, http.StatusNotFound, "That's gone.")
 			return
 		}
@@ -550,7 +561,10 @@ func (s *Server) saveHH(w http.ResponseWriter, r *http.Request, u user) {
 			return
 		}
 		if old.Owner != u.Name {
-			in.Private = false
+			in.Private = old.Private
+		}
+		if k.merge != nil {
+			data = k.merge(u, old.Data, data)
 		}
 		s.db.Exec(`UPDATE hh SET data = ?, private = ?, updated = ? WHERE id = ?`, data, in.Private, now, old.ID)
 		row = old
@@ -566,7 +580,21 @@ func (s *Server) saveHH(w http.ResponseWriter, r *http.Request, u user) {
 		s.hhAdded(u, kind, v, label)
 	}
 	s.hhChanged(u, row)
-	writeJSON(w, map[bool]int{true: http.StatusOK, false: http.StatusCreated}[r.PathValue("id") != ""], s.hhJSON(row))
+	m := s.hhJSON(row)
+	if k.view != nil {
+		k.view(u, row, m)
+	}
+	writeJSON(w, map[bool]int{true: http.StatusOK, false: http.StatusCreated}[r.PathValue("id") != ""], m)
+}
+
+// hidden2 says whether u may see the record at all, by the kind's own rule.
+func visibleTo(k hhKind, u user, row hhRow) bool {
+	if k.view == nil {
+		return true
+	}
+	m := map[string]any{}
+	json.Unmarshal(row.Data, &m)
+	return k.view(u, row, m)
 }
 
 func readBody(r *http.Request, limit int64) ([]byte, error) {
@@ -593,6 +621,15 @@ func (s *Server) hhAdded(u user, kind string, v any, label string) {
 		people, text, link = x.Who, fmt.Sprintf("%s gave you a chore: %s", displayName(u), label), "#/chores"
 	case trip:
 		people, text, link = x.People, fmt.Sprintf("%s added you to a trip: %s", displayName(u), label), "#/trips"
+	case wish:
+		if x.For != "" && x.For != u.Name { // ideas for someone stay a surprise; tell the others
+			for _, p := range everyoneBut(s.db, u.Name) {
+				if p != x.For {
+					people = append(people, p)
+				}
+			}
+			text, link = fmt.Sprintf("%s added a gift idea for %s", displayName(u), s.displayOf(x.For)), "#/wishes"
+		}
 	}
 	for _, p := range people {
 		if p != u.Name {
@@ -615,7 +652,7 @@ func (s *Server) deleteHH(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	row, found := s.hhRow(kind, r.PathValue("id"))
-	if !found || row.Private && row.Owner != u.Name {
+	if !found || row.Private && row.Owner != u.Name || !visibleTo(k, u, row) {
 		jsonError(w, http.StatusNotFound, "That's gone.")
 		return
 	}
@@ -883,6 +920,33 @@ func (s *Server) choreDone(w http.ResponseWriter, r *http.Request, u user) {
 		}
 		who = in.Who
 	}
+	loc := s.location(u.Name)
+	now := time.Now().In(loc)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	if c.Paused {
+		jsonError(w, http.StatusBadRequest, "That chore is paused.")
+		return
+	}
+	if forToday := c.whoOn(today); u.Kid && len(forToday) > 0 && !slices.Contains(forToday, u.Name) {
+		jsonError(w, http.StatusForbidden, "That one isn't yours today.")
+		return
+	}
+	// once each time it comes up: today, this week, this month, or ever for a one-off
+	since := today
+	switch {
+	case c.Repeat == "once":
+		since = time.Unix(0, 0)
+	case strings.HasPrefix(c.Repeat, "weekly"):
+		since = startOfWeek(now)
+	case strings.HasPrefix(c.Repeat, "monthly"):
+		since = time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, loc)
+	}
+	var done int
+	s.db.QueryRow(`SELECT count(*) FROM chore_done WHERE chore = ? AND at >= ?`, row.ID, since.Unix()).Scan(&done)
+	if done > 0 {
+		jsonError(w, http.StatusConflict, "That's done already.")
+		return
+	}
 	res, err := s.db.Exec(`INSERT INTO chore_done (chore, user, at, points, cents) VALUES (?, ?, ?, ?, ?)`, row.ID, who, time.Now().Unix(), c.Points, c.Cents)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
@@ -1116,6 +1180,7 @@ func (s *Server) householdReminders(from, to time.Time) {
 			}
 		}
 	}
+	s.familyReminders(from, to)
 	// chores still to do at 4 in the afternoon
 	for _, name := range s.everyone() {
 		loc := s.location(name)

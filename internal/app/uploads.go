@@ -197,6 +197,11 @@ func (s *Server) finishUpload(w http.ResponseWriter, r *http.Request, u user, a 
 
 func (s *Server) cancelUpload(w http.ResponseWriter, r *http.Request, u user) {
 	id := r.PathValue("id")
+	var n int
+	if s.db.QueryRow(`SELECT count(*) FROM uploads WHERE id = ? AND user = ?`, id, u.Name).Scan(&n); n == 0 || strings.ContainsAny(id, "/\\.") {
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true}) // nothing of theirs by that name
+		return
+	}
 	s.data.Remove(partName(u.Name, id))
 	s.db.Exec(`DELETE FROM uploads WHERE id = ? AND user = ?`, id, u.Name)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

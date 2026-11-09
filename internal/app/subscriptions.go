@@ -5,11 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/emersion/go-ical"
@@ -40,17 +38,8 @@ type subscription struct {
 	data    string
 }
 
-// subClient fetches subscriptions, but never from this machine itself (its local services) or link-local addresses.
-var subClient = &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{
-	DialContext: (&net.Dialer{Timeout: 10 * time.Second, Control: func(_, address string, _ syscall.RawConn) error {
-		host, _, _ := net.SplitHostPort(address)
-		ip := net.ParseIP(host)
-		if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
-			return errors.New("that address isn't allowed")
-		}
-		return nil
-	}}).DialContext,
-}}
+// subClient fetches subscriptions from the internet, never from this machine or the home network (see guard.go).
+var subClient = outsideClient
 
 func subURL(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)

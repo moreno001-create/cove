@@ -113,7 +113,8 @@ func (s *Server) ensureUser(u user) error {
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request, u user) {
 	writeJSON(w, http.StatusOK, map[string]any{"user": u, "url": s.cfg.URL, "office": s.cfg.Collabora != "",
-		"version": s.cfg.Version, "devMode": s.cfg.DevUser != "", "ai": s.aiConfig().on(), "smart": s.aiConfig().Embed != "", "ocr": ocrAvailable()})
+		"version": s.cfg.Version, "devMode": s.cfg.DevUser != "", "ai": s.aiConfig().on(), "smart": s.aiConfig().Embed != "", "ocr": ocrAvailable(),
+		"home": s.haConfig().Token != "" && len(s.haConfig().Entities) > 0, "jellyfin": s.jellyConfig().Key != ""})
 }
 
 // --- signing in with Homeport (OpenID Connect, code flow with PKCE)
@@ -270,7 +271,24 @@ func (s *Server) getJSON(ctx context.Context, u, bearer string, v any) error {
 	return json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(v)
 }
 
+// sameOrigin says a form post came from Cove's own pages or the phone itself (the share sheet), not another site
+// (Homeport's other apps live on sibling addresses, which cookies count as the same site).
+func sameOrigin(r *http.Request) bool {
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "same-origin", "none":
+		return true
+	case "":
+		origin := r.Header.Get("Origin")
+		return origin == "" || origin == "null" || strings.EqualFold(strings.TrimPrefix(strings.TrimPrefix(origin, "https://"), "http://"), r.Host)
+	}
+	return false
+}
+
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if !sameOrigin(r) {
+		http.Error(w, "Sign out from Cove itself.", http.StatusForbidden)
+		return
+	}
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		s.db.Exec(`DELETE FROM sessions WHERE id = ?`, hashHex(c.Value))
 	}

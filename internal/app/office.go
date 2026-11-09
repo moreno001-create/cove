@@ -116,6 +116,9 @@ type officeToken struct {
 	Name    string `json:"n"` // a guest's name
 	Write   bool   `json:"w"`
 	Expires int64  `json:"e"` // unix milliseconds
+	// What gave access, checked again on every request (so ending a share or a link ends editing too).
+	Share int64  `json:"s,omitempty"` // a people share
+	Link  string `json:"l,omitempty"` // a share link's token
 }
 
 func fileID(owner, p string) string { return hashHex(owner + "\x00" + p)[:32] }
@@ -129,7 +132,7 @@ func (s *Server) officeOpen(w http.ResponseWriter, r *http.Request, u user, a ac
 		return
 	}
 	p := a.path(in.Path)
-	s.openDocument(w, r, officeToken{Owner: a.owner, Path: p, User: u.Name, Write: a.edit})
+	s.openDocument(w, r, officeToken{Owner: a.owner, Path: p, User: u.Name, Write: a.edit, Share: a.share})
 	s.touchRecent(u, a, p)
 }
 
@@ -185,7 +188,7 @@ func (s *Server) wopiFile(w http.ResponseWriter, r *http.Request) (officeToken, 
 		b, err := base64.RawURLEncoding.DecodeString(v)
 		ok = err == nil && json.Unmarshal(b, &tok) == nil
 	}
-	if !ok || tok.Expires < time.Now().UnixMilli() || fileID(tok.Owner, tok.Path) != r.PathValue("id") {
+	if !ok || tok.Expires < time.Now().UnixMilli() || fileID(tok.Owner, tok.Path) != r.PathValue("id") || !s.stillAllowed(tok) {
 		http.Error(w, "invalid or expired access token", http.StatusUnauthorized)
 		return tok, user{}, false
 	}
@@ -202,6 +205,32 @@ func (s *Server) wopiFile(w http.ResponseWriter, r *http.Request) (officeToken, 
 		return tok, u, false
 	}
 	return tok, u, true
+}
+
+// stillAllowed says whether what opened the document still gives access: the link or share hasn't ended, and
+// still lets the person change it when the token says so.
+func (s *Server) stillAllowed(tok officeToken) bool {
+	switch {
+	case tok.Link != "":
+		var mode int
+		var expires int64
+		if s.db.QueryRow(`SELECT upload, expires FROM shares WHERE token = ? AND user = ?`, tok.Link, tok.Owner).Scan(&mode, &expires) != nil {
+			return false
+		}
+		return (expires == 0 || expires > time.Now().Unix()) && (!tok.Write || mode >= 0 && mode < len(shareModes) && shareModes[mode] == "edit")
+	case strings.HasPrefix(tok.User, "guest:"):
+		return false // guests always come through a link
+	case tok.User == tok.Owner:
+		return true
+	case tok.Share != 0:
+		var p string
+		var edit bool
+		if s.db.QueryRow(`SELECT path, edit FROM user_shares WHERE id = ? AND owner = ? AND target = ?`, tok.Share, tok.Owner, tok.User).Scan(&p, &edit) != nil {
+			return false
+		}
+		return (tok.Path == p || strings.HasPrefix(tok.Path, strings.TrimSuffix(p, "/")+"/") || p == ".") && (!tok.Write || edit)
+	}
+	return false
 }
 
 func wopiTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }

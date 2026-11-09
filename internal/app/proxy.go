@@ -25,6 +25,16 @@ func (s *Server) officeProxy() http.Handler {
 			r.Out.Host = public.Host // Collabora writes links with the address the browser used
 		},
 		FlushInterval: -1,
+		// Collabora's pages are shown only inside Cove's own pages, never framed by another site
+		ModifyResponse: func(res *http.Response) error {
+			if strings.HasPrefix(res.Header.Get("Content-Type"), "text/html") {
+				res.Header.Set("X-Frame-Options", "SAMEORIGIN")
+				if res.Header.Get("Content-Security-Policy") == "" {
+					res.Header.Set("Content-Security-Policy", "frame-ancestors 'self'; object-src 'none'; base-uri 'self'")
+				}
+			}
+			return nil
+		},
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/admin") || strings.HasPrefix(r.URL.Path, "/cool/getMetrics") {

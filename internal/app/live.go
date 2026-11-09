@@ -181,6 +181,9 @@ func (s *Server) pushUnsubscribe(w http.ResponseWriter, r *http.Request, u user)
 }
 
 // pushTo sends a notification to every device the user turned push on for, dropping ones that are gone.
+// pushHTTP reaches push services (Apple's, Google's, Mozilla's), on the internet only (a test hook).
+var pushHTTP = pushClient
+
 func (s *Server) pushTo(user, text, link string) {
 	rows, err := s.db.Query(`SELECT endpoint, p256dh, auth FROM push_subs WHERE user = ?`, user)
 	if err != nil {
@@ -206,7 +209,7 @@ func (s *Server) pushTo(user, text, link string) {
 	for _, sub := range subs {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		res, err := webpush.SendNotificationWithContext(ctx, msg, &sub, &webpush.Options{Subscriber: subscriber,
-			VAPIDPublicKey: k.Public, VAPIDPrivateKey: k.Private, TTL: 24 * 3600, HTTPClient: s.http})
+			VAPIDPublicKey: k.Public, VAPIDPrivateKey: k.Private, TTL: 24 * 3600, HTTPClient: pushHTTP})
 		cancel()
 		if err != nil {
 			log.Printf("push to %s: %v", user, err)

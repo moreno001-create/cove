@@ -50,8 +50,8 @@ func serviceWorker(w http.ResponseWriter, r *http.Request) {
 // The service worker: notifications pushed to the phone, and offline reading. The app's pages and the lists people
 // read on the go (tasks, notes, calendars) are answered from the network when there is one and from the last copy
 // when there isn't. Files and everything else always come from the server.
-const swSource = `const CACHE = "cove-v2";
-const SHELL = ["/", "/assets/style.css", "/assets/common.js", "/assets/app.js", "/assets/house.js", "/assets/icon.svg", "/assets/icon-192.png"];
+const swSource = `const CACHE = "cove-v3";
+const SHELL = ["/", "/assets/style.css", "/assets/common.js", "/assets/app.js", "/assets/house.js", "/assets/family.js", "/assets/icon.svg", "/assets/icon-192.png"];
 const OFFLINE = [/^\/api\/(me|tasks|notes|calendars|home|fridge|office|settings|chores|users)(\?|$)/, /^\/api\/hh\/(recipe|meal|trip|chore)(\?|$)/, /^\/api\/files\/content\?path=%2FNotes%2F/];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });
 self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
@@ -83,6 +83,10 @@ self.addEventListener("notificationclick", e => {
 // shareTarget saves what the phone's share sheet sent: files as they are, text and links as a note. The session
 // cookie is SameSite=Lax, so other sites can't post here as the user.
 func (s *Server) shareTarget(w http.ResponseWriter, r *http.Request) {
+	if !sameOrigin(r) {
+		http.Error(w, "Sharing to Cove only works from the phone's share sheet.", http.StatusForbidden)
+		return
+	}
 	u, ok := s.currentUser(r)
 	if !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)

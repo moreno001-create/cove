@@ -358,7 +358,7 @@ func (s *Server) shareOffice(w http.ResponseWriter, r *http.Request) {
 	if p == "files/"+sh.User {
 		p = "."
 	}
-	s.openDocument(w, r, officeToken{Owner: sh.User, Path: p, User: "guest:" + randomToken(6), Name: name, Write: sh.Mode == "edit"})
+	s.openDocument(w, r, officeToken{Owner: sh.User, Path: p, User: "guest:" + randomToken(6), Name: name, Write: sh.Mode == "edit", Link: sh.Token})
 }
 
 func (s *Server) shareOfficeTypes(w http.ResponseWriter, r *http.Request) {

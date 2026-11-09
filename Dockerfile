@@ -7,9 +7,9 @@ COPY . .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /cove ./cmd/cove
 
-# Alpine, for Tesseract (reading the words in scans and photos of papers) and Poppler (PDF text).
+# Alpine, for Tesseract (reading the words in scans and photos of papers), Poppler (PDF text) and restic (off-site backups).
 FROM alpine:3.22
-RUN apk add --no-cache ca-certificates tesseract-ocr tesseract-ocr-data-eng poppler-utils
+RUN apk add --no-cache ca-certificates tesseract-ocr tesseract-ocr-data-eng poppler-utils restic
 COPY --from=build /cove /cove
 ENV COVE_DATA=/data COVE_ADDR=:8080
 VOLUME /data

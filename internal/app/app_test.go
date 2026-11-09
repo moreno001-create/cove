@@ -1184,6 +1184,9 @@ func TestHomeFavoritesBirthdays(t *testing.T) {
 }
 
 func TestNotificationsAndReminders(t *testing.T) {
+	old := ntfyClient
+	ntfyClient = http.DefaultClient // the test's ntfy is on this machine, which Cove otherwise won't send to
+	defer func() { ntfyClient = old }()
 	pushed := make(chan string, 10)
 	ntfy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		b, _ := io.ReadAll(req.Body)

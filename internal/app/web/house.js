@@ -897,14 +897,14 @@ function showAsk(c) {
   const q = el("textarea", { class: "input", rows: 2, placeholder: "When is the dentist? What's for dinner this week? What's our car insurance number?",
     onkeydown: e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } } });
   const go = () => { const v = q.value.trim(); if (!v) return; q.value = ""; c.querySelector(".askcard .chips")?.remove(); askStream(v, null, log, ASK.history); };
-  const ideas = ["What's on this week?", "What's for dinner tonight?", "Which chores are left today?", "When does the dishwasher warranty end?", "What do we still need to pack?"];
+  const ideas = ["What's on this week?", "Add milk and eggs to the shopping list", "Put the dentist on Thursday at 3", "Which chores are left today?", "What do we still need to pack?"];
   for (const h of ASK.history) log.append(el("div", { class: "qa " + h.role }, h.role === "user" ? h.content : el("div", { class: "md" }, markdown(h.content))));
   put(c, 
     pageHead("Ask Cove", "Answers from your calendar, tasks, fridge, chores, meals, trips, records and documents. It runs on your home network.",
       ASK.history.length ? btn("New conversation", "refresh", () => { ASK.history = []; showAsk(c); }, "ghost") : null),
     el("div", { class: "card askcard" }, log,
       ASK.history.length ? null : el("div", { class: "chips", style: { padding: "0 0 10px" } }, ideas.map(i => el("button", { class: "chip", onclick: () => { q.value = i; go(); } }, i))),
-      el("div", { class: "compose" }, q, el("button", { class: "btn primary", onclick: go }, "Ask"))));
+      el("div", { class: "compose" }, q, micButton(q, go), el("button", { class: "btn primary", onclick: go }, "Ask"))));
   setTimeout(() => q.focus(), 50);
 }
 
@@ -930,7 +930,17 @@ async function askStream(question, path, log, history) {
         if (!line.startsWith("data: ")) continue;
         const ev = JSON.parse(line.slice(6));
         if (ev.sources) sources = ev.sources;
-        if (ev.text) { text += ev.text; put(aEl, el("div", { class: "md" }, markdown(text))); log.scrollTop = log.scrollHeight; }
+        if (ev.action) {
+          let box = aEl.querySelector(".actions");
+          if (!box) { box = el("div", { class: "actions" }); aEl.prepend(box); }
+          box.append(el("div", { class: "actdone" + (/^Couldn't/.test(ev.action) ? " failed" : "") }, icon(/^Couldn't/.test(ev.action) ? "close" : "check"), ev.action));
+          if (text === "") { const md = aEl.querySelector(".md.muted"); if (md) md.remove(); }
+        }
+        if (ev.text) {
+          text += ev.text;
+          put(aEl, aEl.querySelector(".actions"), el("div", { class: "md" }, markdown(text)));
+          log.scrollTop = log.scrollHeight;
+        }
         if (ev.error) throw new Error(ev.error);
       }
     }
@@ -941,7 +951,7 @@ async function askStream(question, path, log, history) {
   // name only the documents the answer used (by name, or by a number or word only that document has)
   const lower = text.toLowerCase();
   const used = sources.filter(s => lower.includes(s.name.replace(/\.[^.]+$/, "").toLowerCase()));
-  sources = used.length ? used : sources.slice(0, 2);
+  sources = used;
   if (sources.length) aEl.append(el("div", { class: "sources" }, "From: ", ...sources.map(s => el("a", { href: "#", text: s.name, onclick: e => {
     e.preventDefault(); S.share = null; S.path = parentOf(s.path); const it = { name: s.name, path: s.path, kind: kindOfName(s.path) }; S.items = [it]; openItem(it);
   } }))));

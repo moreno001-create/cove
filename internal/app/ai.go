@@ -469,6 +469,54 @@ func (s *Server) householdContext(ctx context.Context, u user, q, docPath string
 			fmt.Fprintf(&b, "- %s %s %s %s %s\n", p.Date, p.Time, p.Title, p.Where, p.Ref)
 		}
 	}
+	b.WriteString("\n## Medicines and health\n")
+	for _, d := range s.dosesOn(u, now) {
+		fmt.Fprintf(&b, "- %s %s %s at %s today, %s\n", d.Who, d.Name, d.Dose, d.Time, map[bool]string{true: "taken by " + d.By, false: "not taken yet"}[d.Taken])
+	}
+	for _, h := range hhItems[healthRecord](s, u, "health") {
+		fmt.Fprintf(&b, "- %s: %s (%s) on %s, next due %s, %s\n", h.V.Who, h.V.Title, h.V.Type, h.V.Date, h.V.Next, h.V.Provider)
+	}
+	b.WriteString("\n## Pantry\n")
+	for _, p := range hhItems[pantryItem](s, u, "pantry") {
+		fmt.Fprintf(&b, "- %s: %g %s", p.V.Name, p.V.Qty, p.V.Unit)
+		if p.V.Qty <= p.V.Min {
+			b.WriteString(" (running low)")
+		}
+		if p.V.Expires != "" {
+			fmt.Fprintf(&b, ", use by %s", p.V.Expires)
+		}
+		b.WriteByte('\n')
+	}
+	b.WriteString("\n## Your own wish list\n")
+	for _, x := range hhItems[wish](s, u, "wish") {
+		if x.V.For == u.Name && x.Owner == u.Name {
+			fmt.Fprintf(&b, "- %s\n", x.V.Title)
+		}
+	}
+	if c := s.haConfig(); c.Token != "" && len(c.Entities) > 0 {
+		hctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		if devs, states, err := s.devices(hctx, u); err == nil {
+			b.WriteString("\n## At home now (Home Assistant)\n")
+			for _, d := range devs {
+				fmt.Fprintf(&b, "- %s (%s): %s%s\n", d.Name, d.ID, d.State, d.Unit)
+			}
+			if e := s.energy(states); e != nil {
+				for _, kv := range []struct {
+					k    string
+					v    *float64
+					unit string
+				}{{"Solar now", e.Solar, " W"}, {"Solar today", e.Today, " kWh"}, {"Battery", e.Battery, "%"}, {"House using", e.Load, " W"}, {"Grid", e.Grid, " W (+ from, − to)"}} {
+					if kv.v != nil {
+						fmt.Fprintf(&b, "- %s: %.1f%s\n", kv.k, *kv.v, kv.unit)
+					}
+				}
+			}
+			if wv := s.weather(states); wv != nil {
+				fmt.Fprintf(&b, "- Weather: %s, %.0f%s\n", wv.State, wv.Temp, wv.Unit)
+			}
+		}
+		cancel()
+	}
 	if !u.Kid {
 		b.WriteString("\n## Home records\n")
 		for _, r := range hhItems[record](s, u, "record") {
@@ -588,34 +636,90 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	system := "You are Cove, the helper inside a family's home app. Answer from what Cove knows below; if it isn't there, say you " +
 		"don't see it in Cove (don't make things up), and you may add general knowledge clearly marked as such. Be brief, " +
-		"warm and practical. Use the people's names. Dates are relative to Now. When you use a document, name it.\n\n# What Cove knows\n" + known
-	msgs := []chatTurn{{"system", system}}
+		"warm and practical. Use the people's names. Dates are relative to Now. When you use a document, name it. " +
+		"When asked to add, plan, put up, remind, switch or write something down, use the tools to do it, then say in one line what you did."
+	if in.Path != "" {
+		system = "You are Cove, the helper inside a family's home app. Answer about the document below; be brief and clear."
+	}
+	system += "\n\n# What Cove knows\n" + known
+	msgs := []map[string]any{{"role": "system", "content": system}}
 	for _, h := range in.History {
 		if (h.Role == "user" || h.Role == "assistant") && len(msgs) < 20 {
-			msgs = append(msgs, chatTurn{h.Role, clip(h.Content, 8000)})
+			msgs = append(msgs, map[string]any{"role": h.Role, "content": clip(h.Content, 8000)})
 		}
 	}
-	msgs = append(msgs, chatTurn{"user", clip(in.Question, 8000)})
-	res, err := s.aiPost(r.Context(), c, "/chat/completions", map[string]any{"model": c.Model, "messages": msgs, "stream": true, "temperature": 0.3})
-	if err != nil {
-		jsonError(w, http.StatusBadGateway, err.Error())
-		return
+	msgs = append(msgs, map[string]any{"role": "user", "content": clip(in.Question, 8000)})
+	var tools []tool
+	if in.Path == "" {
+		tools = s.tools(u)
 	}
-	defer res.Body.Close()
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	flusher, _ := w.(http.Flusher)
+	started := false
 	send := func(v any) {
+		started = true
 		b, _ := json.Marshal(v)
 		fmt.Fprintf(w, "data: %s\n\n", b)
 		if flusher != nil {
 			flusher.Flush()
 		}
 	}
-	send(map[string]any{"sources": sources})
+	// up to three rounds: the model may call tools, hear what happened, then answer
+	for round := 0; round < 3; round++ {
+		body := map[string]any{"model": c.Model, "messages": msgs, "stream": true, "temperature": 0.3}
+		if len(tools) > 0 && round < 2 {
+			body["tools"] = tools
+		}
+		res, err := s.aiPost(r.Context(), c, "/chat/completions", body)
+		if err != nil {
+			if !started {
+				jsonError(w, http.StatusBadGateway, err.Error())
+			} else {
+				send(map[string]string{"error": err.Error()})
+			}
+			return
+		}
+		if round == 0 {
+			send(map[string]any{"sources": sources})
+		}
+		calls, text, err := s.streamAnswer(res, send)
+		res.Body.Close()
+		if err != nil {
+			send(map[string]string{"error": err.Error()})
+			return
+		}
+		if len(calls) == 0 {
+			break
+		}
+		assistant := map[string]any{"role": "assistant", "content": text, "tool_calls": calls}
+		msgs = append(msgs, assistant)
+		for _, call := range calls {
+			result := s.act(r.Context(), u, call.Function.Name, call.Function.Arguments)
+			send(map[string]string{"action": result})
+			msgs = append(msgs, map[string]any{"role": "tool", "tool_call_id": call.ID, "content": result})
+		}
+	}
+	send(map[string]bool{"done": true})
+}
+
+type toolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// streamAnswer passes the model's words on as they come, and gathers any tool calls (they arrive in pieces).
+func (s *Server) streamAnswer(res *http.Response, send func(any)) ([]toolCall, string, error) {
 	sc := bufio.NewScanner(res.Body)
 	sc.Buffer(make([]byte, 64<<10), 4<<20)
 	thinking := false
+	var calls []toolCall
+	var text strings.Builder
 	for sc.Scan() {
 		line, ok := strings.CutPrefix(sc.Text(), "data: ")
 		if !ok {
@@ -627,14 +731,34 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request, u user) {
 		var ev struct {
 			Choices []struct {
 				Delta struct {
-					Content string `json:"content"`
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
 				} `json:"delta"`
 			} `json:"choices"`
 		}
 		if json.Unmarshal([]byte(line), &ev) != nil || len(ev.Choices) == 0 {
 			continue
 		}
-		piece := ev.Choices[0].Delta.Content
+		d := ev.Choices[0].Delta
+		for _, tc := range d.ToolCalls {
+			for len(calls) <= tc.Index {
+				calls = append(calls, toolCall{Type: "function"})
+			}
+			c := &calls[tc.Index]
+			if tc.ID != "" {
+				c.ID = tc.ID
+			}
+			c.Function.Name += tc.Function.Name
+			c.Function.Arguments += tc.Function.Arguments
+		}
+		piece := d.Content
 		// some models think out loud between <think> tags first: leave that out
 		if strings.Contains(piece, "<think>") {
 			thinking = true
@@ -647,12 +771,14 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request, u user) {
 			}
 		}
 		if piece != "" {
+			text.WriteString(piece)
 			send(map[string]string{"text": piece})
 		}
 	}
-	if err := sc.Err(); err != nil {
-		send(map[string]string{"error": err.Error()})
-		return
+	for i := range calls {
+		if calls[i].ID == "" {
+			calls[i].ID = fmt.Sprintf("call_%d", i)
+		}
 	}
-	send(map[string]bool{"done": true})
+	return calls, text.String(), sc.Err()
 }

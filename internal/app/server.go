@@ -65,12 +65,14 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{cfg: cfg, db: db, data: root, key: key, http: &http.Client{Timeout: 30 * time.Second},
 		mux: http.NewServeMux(), locks: map[string]xwebdav.LockSystem{}}
+	setTrusted(cfg.URL)
 	s.routes()
 	go s.cleanUpEvery(time.Hour)
 	go s.remindEvery(time.Minute)
 	go s.indexEvery(20 * time.Minute)
 	go s.refreshSubscriptionsEvery(6 * time.Hour)
 	go s.snapshotEvery(6 * time.Hour)
+	go s.offsiteEvery()
 	return s, nil
 }
 
@@ -197,6 +199,25 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/albums/{id}/photo", s.api(s.albumPhoto))
 	m.HandleFunc("POST /api/scan", s.api(s.files(s.saveScan)))
 	m.HandleFunc("POST /api/ask", s.api(s.ask))
+	m.HandleFunc("GET /api/devices", s.api(s.listDevices))
+	m.HandleFunc("POST /api/devices", s.api(s.switchDevice))
+	m.HandleFunc("GET /api/watching", s.api(s.watching))
+	m.HandleFunc("GET /api/watching/image/{id}", s.api(s.jellyImage))
+	m.HandleFunc("GET /api/meds/today", s.api(s.medsToday))
+	m.HandleFunc("POST /api/meds/{id}/taken", s.api(s.medTaken))
+	m.HandleFunc("POST /api/pantry/{id}/use", s.api(s.pantryUse))
+	m.HandleFunc("GET /api/pantry/lookup", s.api(s.pantryLookup))
+	m.HandleFunc("GET /api/journal/{id}/photo", s.api(s.journalPhoto))
+	m.HandleFunc("GET /api/memories", s.api(s.memories))
+	m.HandleFunc("GET /api/briefing", s.api(s.briefingNow))
+	m.HandleFunc("GET /api/admin/ha", s.api(s.admin(s.getHA)))
+	m.HandleFunc("PUT /api/admin/ha", s.api(s.admin(s.putHA)))
+	m.HandleFunc("GET /api/admin/ha/entities", s.api(s.admin(s.haEntities)))
+	m.HandleFunc("GET /api/admin/jellyfin", s.api(s.admin(s.getJelly)))
+	m.HandleFunc("PUT /api/admin/jellyfin", s.api(s.admin(s.putJelly)))
+	m.HandleFunc("GET /api/admin/offsite", s.api(s.admin(s.getOffsite)))
+	m.HandleFunc("PUT /api/admin/offsite", s.api(s.admin(s.putOffsite)))
+	m.HandleFunc("POST /api/admin/offsite/run", s.api(s.admin(s.runOffsite)))
 	m.HandleFunc("GET /api/admin/ai", s.api(s.admin(s.getAI)))
 	m.HandleFunc("PUT /api/admin/ai", s.api(s.admin(s.putAI)))
 	m.HandleFunc("GET /api/admin/ai/models", s.api(s.admin(s.aiModels)))

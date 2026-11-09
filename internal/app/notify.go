@@ -37,13 +37,14 @@ CREATE TABLE IF NOT EXISTS sent (
 );`
 
 type userSettings struct {
-	Ntfy string `json:"ntfy"` // an ntfy topic's address, https://ntfy.example.com/my-topic
-	TZ   string `json:"tz"`
+	Ntfy     string `json:"ntfy"` // an ntfy topic's address, https://ntfy.example.com/my-topic
+	TZ       string `json:"tz"`
+	Briefing string `json:"briefing"` // "07:00": the morning briefing at that time ("" off)
 }
 
 func (s *Server) settingsOf(user string) userSettings {
 	var st userSettings
-	s.db.QueryRow(`SELECT ntfy, tz FROM user_settings WHERE user = ?`, user).Scan(&st.Ntfy, &st.TZ)
+	s.db.QueryRow(`SELECT ntfy, tz, briefing FROM user_settings WHERE user = ?`, user).Scan(&st.Ntfy, &st.TZ, &st.Briefing)
 	return st
 }
 
@@ -67,6 +68,9 @@ func (s *Server) notify(user, text, link string) {
 	s.changed("notifications", user)
 }
 
+// ntfyClient reaches ntfy on the internet or under Cove's own main domain (a test hook).
+var ntfyClient = outsideClient
+
 func (s *Server) pushNtfy(topic, text, link string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -79,7 +83,7 @@ func (s *Server) pushNtfy(topic, text, link string) error {
 	if link != "" {
 		req.Header.Set("Click", s.cfg.URL+"/"+link)
 	}
-	res, err := s.http.Do(req)
+	res, err := ntfyClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -200,9 +204,12 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request, u user) {
 	if _, err := time.LoadLocation(in.TZ); err != nil {
 		in.TZ = ""
 	}
-	if _, err := s.db.Exec(`INSERT INTO user_settings (user, ntfy, tz) VALUES (?, ?, ?)
-		ON CONFLICT(user) DO UPDATE SET ntfy = excluded.ntfy, tz = CASE WHEN excluded.tz = '' THEN user_settings.tz ELSE excluded.tz END`,
-		u.Name, in.Ntfy, in.TZ); err != nil {
+	if in.Briefing != "" && !clockTime.MatchString(in.Briefing) {
+		in.Briefing = ""
+	}
+	if _, err := s.db.Exec(`INSERT INTO user_settings (user, ntfy, tz, briefing) VALUES (?, ?, ?, ?)
+		ON CONFLICT(user) DO UPDATE SET ntfy = excluded.ntfy, briefing = excluded.briefing, tz = CASE WHEN excluded.tz = '' THEN user_settings.tz ELSE excluded.tz END`,
+		u.Name, in.Ntfy, in.TZ, in.Briefing); err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
