@@ -238,7 +238,9 @@ async function homeExtras(box) {
     api("GET", "/api/meds/today").catch(() => null)]);
   if (dev) {
     const shown = dev.devices.filter(d => d.home);
-    if (dev.weather || dev.energy || shown.length) cards.push(el("div", { class: "card hcard" }, el("div", { class: "hhead" }, icon("home"), el("h3", { text: "At home" }), el("div", { class: "grow" }), dev.weather ? weatherBadge(dev.weather) : null),
+    if (dev.weather || dev.energy || shown.length || (dev.people || []).length) cards.push(el("div", { class: "card hcard" }, el("div", { class: "hhead" }, icon("home"), el("h3", { text: "At home" }), el("div", { class: "grow" }), dev.weather ? weatherBadge(dev.weather) : null),
+      dev.people && dev.people.length ? el("div", { class: "people" }, dev.people.map(p => el("span", { class: "who" + (p.state === "home" ? " in" : ""), title: p.since ? "since " + fmtDate(p.since * 1000) : "" },
+        el("span", { class: "dot" }), p.name, el("small", { text: p.state === "home" ? "home" : p.state === "not_home" ? "away" : p.state })))) : null,
       dev.energy ? energyRow(dev.energy) : null,
       shown.length ? el("div", { class: "devices" }, shown.map(d => deviceButton(d, () => homeExtras(box)))) : null));
   }

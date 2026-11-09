@@ -734,3 +734,26 @@ html.dark .bubble img, html.dark .fnote.photo { background: #1f2430; }
 html.dark .fnote { box-shadow: 0 2px 6px rgba(0,0,0,.45), 0 10px 24px rgba(0,0,0,.35); }
 .themebtn svg { transition: transform .3s; }
 .themebtn:hover svg { transform: rotate(-20deg); }
+
+/* the menu: folding groups, small icons at the bottom */
+.navsec { display: flex; flex-direction: column; }
+.navgroup.fold { display: flex; align-items: center; justify-content: space-between; width: 100%; border: 0; background: none; cursor: pointer; font: inherit; font-size: 11px; color: var(--muted); padding: 12px 10px 4px; border-radius: 6px; }
+.navgroup.fold:hover { color: var(--text); }
+.navgroup.fold svg { width: 13px; height: 13px; transition: transform .15s; }
+.navgroup.fold.open svg { transform: rotate(90deg); }
+.navitems { display: flex; flex-direction: column; gap: 1px; }
+.navfoot { display: flex; justify-content: space-between; gap: 2px; padding: 8px 2px; border-top: 1px solid var(--line); margin-top: 6px; }
+.nav.mini { width: auto; flex: 1; justify-content: center; padding: 8px 0; }
+
+/* rewards, Wi-Fi card, who's home */
+.reward { display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: default; }
+.remoji { font-size: 28px; }
+.wifi { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.wifi img { width: 160px; height: 160px; image-rendering: pixelated; background: #fff; padding: 6px; border-radius: 6px; }
+.fridge.small .wifi img { width: 110px; height: 110px; }
+.people { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.people .who { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; background: var(--sunk); font-size: 13px; }
+.people .who small { color: var(--muted); }
+.people .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.people .who.in .dot { background: var(--ok); }
+.rgrid.rewards { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }

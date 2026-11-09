@@ -63,7 +63,7 @@ async function showMeals(c) {
   const byId = Object.fromEntries(recipes.map(r => [r.id, r]));
   const tabs = el("div", { class: "seg" }, ["plan", "recipes"].map(t => el("button", { class: MEALS.tab === t ? "on" : "", onclick: () => { MEALS.tab = t; showMeals(c); } }, t === "plan" ? "This week" : `Recipes (${recipes.length})`)));
   if (MEALS.tab === "recipes") {
-    put(c, pageHead("Meals", null, tabs, btn("New recipe", "plus", () => recipeDialog(null, c), "primary")),
+    put(c, pageHead("Meals", null, tabs, btn("From a link", "share", () => recipeFromLink(c)), btn("New recipe", "plus", () => recipeDialog(null, c), "primary")),
       recipes.length ? el("div", { class: "rgrid" }, recipes.sort((a, b) => a.title.localeCompare(b.title)).map(r => el("div", { class: "card rcard", onclick: () => recipeView(r, c) },
         el("h3", { text: r.title }),
         el("div", { class: "muted", style: { fontSize: "12.5px" }, text: [r.minutes ? r.minutes + " min" : "", r.serves ? "serves " + r.serves : "", (r.ingredients || []).length + " ingredients"].filter(Boolean).join(" · ") }),
@@ -178,6 +178,7 @@ async function showChores(c) {
     b.recent.length ? el("h3", { class: "sec", text: "Done lately" }) : null,
     b.recent.length ? el("div", { class: "card items-list" }, b.recent.slice(0, 12).map(r => el("div", {}, icon("check"), el("div", { class: "grow" }, el("b", { text: r.who }), " " + r.chore),
       el("span", { class: "muted", style: { fontSize: "12.5px" }, text: fmtDate(r.at * 1000) + (r.points ? ` · +${r.points}` : "") })))) : null);
+  rewardsSection(c).then(sec => { if (sec && location.hash.startsWith("#/chores")) c.append(sec); });
 }
 
 function choreDialog(ch, c) {
@@ -460,6 +461,7 @@ function scanDialog(folder) {
     const out = await res.json();
     if (!res.ok) throw new Error(out.error || "Saving didn't work");
     toast("Saved " + out.path);
+    if (S.me.ai) setTimeout(async () => { if (await confirmBox("Sort this letter?", "Your home AI reads it and suggests a folder, a name, and a bill or calendar date if there is one.", "Sort it")) sortLetter(out.path); }, 400);
     if (location.hash.startsWith("#/files")) refreshSoon();
   } }] });
   setTimeout(() => cam.click(), 100);
@@ -620,7 +622,7 @@ async function showBudget(c) {
   const today = ymd(new Date());
   put(c, 
     pageHead("Budget", null, btn("", "left", () => shift(-1), "ghost icon"), el("b", { text: m.toLocaleDateString([], { month: "long", year: "numeric" }) }), btn("", "right", () => shift(1), "ghost icon"),
-      btn("Bill", "plus", () => billDialog(null, c)), btn("Spending", "plus", () => expenseDialog(null, c), "primary")),
+      btn("Receipt", "image", () => snapReceipt()), btn("Bill", "plus", () => billDialog(null, c)), btn("Spending", "plus", () => expenseDialog(null, c), "primary")),
     el("div", { class: "stats" },
       el("div", { class: "card stat" }, el("small", { text: "Bills this month" }), el("b", { text: money(b.billTotal) }), el("span", { class: "muted", text: `${money(b.billPaid)} paid` })),
       el("div", { class: "card stat" }, el("small", { text: "Other spending" }), el("b", { text: money(b.spent) })),
@@ -646,7 +648,8 @@ async function showBudget(c) {
     b.expenses.length ? el("div", { class: "card items-list" }, b.expenses.map(x => el("div", { style: { cursor: "pointer" }, onclick: () => expenseDialog(x, c) },
       el("div", { class: "ficon k-file" }, icon(x.settle ? "restore" : "sheet")),
       el("div", { class: "grow" }, el("div", { style: { fontWeight: 600 }, text: x.settle ? `${nameOf(x.paidBy)} paid ${nameOf(x.split[0])} back` : x.title }),
-        el("div", { class: "muted", style: { fontSize: "12.5px" }, text: [parseYmd(x.date).toLocaleDateString([], { month: "short", day: "numeric" }), x.category, x.paidBy && !x.settle ? "paid by " + nameOf(x.paidBy) : "", (x.split || []).length > 1 ? "split " + x.split.length + " ways" : ""].filter(Boolean).join(" · ") })),
+        el("div", { class: "muted", style: { fontSize: "12.5px" } }, [parseYmd(x.date).toLocaleDateString([], { month: "short", day: "numeric" }), x.category, x.paidBy && !x.settle ? "paid by " + nameOf(x.paidBy) : "", (x.split || []).length > 1 ? "split " + x.split.length + " ways" : ""].filter(Boolean).join(" · "),
+          x.receipt && x.owner === S.me.user.name ? el("a", { href: files.content(x.receipt), target: "_blank", style: { marginLeft: "6px" }, text: "📎 receipt", onclick: e => e.stopPropagation() }) : null)),
       el("b", { text: money(x.amount) })))) : emptyCard("sheet", "No spending this month", "Write down shared costs: Cove works out who owes whom."));
 }
 
@@ -685,7 +688,7 @@ function expenseDialog(x, c) {
   buttons: [x.id ? { label: "Delete", danger: true, action: async () => { await HH.del("expense", x.id).catch(fail); showBudget(c); } } : null, "grow", { label: "Cancel" },
     { label: "Save", primary: true, action: async () => {
       await HH.save("expense", { ...x, title: title.value, amount: parseFloat(amount.value) || 0, date: date.value, paidBy: paidBy.value, category: category.value, split: split.value() });
-      showBudget(c);
+      if (c) showBudget(c); else toast("Added to the budget");
     } }].filter(Boolean) });
 }
 

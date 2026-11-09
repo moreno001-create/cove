@@ -151,6 +151,14 @@ func (s *Server) addFridge(w http.ResponseWriter, r *http.Request, u user) {
 		for i := range in.Items {
 			in.Items[i].Done, in.Items[i].By, in.Items[i].Votes = false, "", nil
 		}
+	case "wifi": // the guest network: its name, and the password as the one item
+		if in.Text == "" {
+			jsonError(w, http.StatusBadRequest, "What's the network called?")
+			return
+		}
+		if len(in.Items) > 1 {
+			in.Items = in.Items[:1]
+		}
 	case "countdown":
 		if in.Text == "" || !validDate(in.Date) {
 			jsonError(w, http.StatusBadRequest, "A countdown needs a name and a day.")
@@ -182,7 +190,7 @@ func (s *Server) addFridge(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	id, _ := res.LastInsertId()
-	what := map[string]string{"note": "a note", "list": "a list", "poll": "a poll", "countdown": "a countdown"}[in.Kind]
+	what := map[string]string{"note": "a note", "list": "a list", "poll": "a poll", "countdown": "a countdown", "wifi": "the guest Wi-Fi"}[in.Kind]
 	detail := ""
 	if t := firstLine(in.Text); t != "" {
 		detail = ": “" + t + "”"

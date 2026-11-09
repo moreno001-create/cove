@@ -124,9 +124,10 @@ func (s *Server) haDo(ctx context.Context, method, path string, body any, out an
 }
 
 type haState struct {
-	EntityID   string         `json:"entity_id"`
-	State      string         `json:"state"`
-	Attributes map[string]any `json:"attributes"`
+	EntityID    string         `json:"entity_id"`
+	State       string         `json:"state"`
+	Attributes  map[string]any `json:"attributes"`
+	LastChanged string         `json:"last_changed"`
 }
 
 type deviceView struct {
@@ -193,7 +194,7 @@ func (s *Server) listDevices(w http.ResponseWriter, r *http.Request, u user) {
 		jsonError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"devices": list, "energy": s.energy(states), "weather": s.weather(states)})
+	writeJSON(w, http.StatusOK, map[string]any{"devices": list, "energy": s.energy(states), "weather": s.weather(states), "people": whoIsHome(states)})
 }
 
 type energyView struct {

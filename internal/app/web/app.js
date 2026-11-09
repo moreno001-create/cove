@@ -48,17 +48,12 @@ async function boot() {
   drawShell();
   addEventListener("hashchange", route);
   route();
+  setTimeout(() => welcomeTour(), 800);
   startLive();
   OFFQ.flush();
 }
 
-// the menu, in groups ("-label" starts one); kids don't see money, records or public links
-const NAV = [["home", "home", "Home"], ["fridge", "pin", "Fridge"], ["chat", "mail", "Chat"], ["ask", "search", "Ask Cove"],
-  ["-Files"], ["files", "folder", "My files"], ["photos", "image", "Photos"], ["recent", "clock", "Recent"], ["shared", "inbox", "Shared with me"], ["links", "share", "Shared links", "adult"],
-  ["-Plans"], ["calendar", "calendar", "Calendar"], ["tasks", "check", "Tasks"], ["meals", "text", "Meals"], ["chores", "star", "Chores"], ["trips", "place", "Trips"],
-  ["-Home"], ["contacts", "user", "Contacts"], ["notes", "edit", "Notes"], ["journal", "text", "Journal"], ["wishes", "star", "Wish lists"], ["health", "clock", "Health"], ["pantry", "inbox", "Pantry"],
-  ["records", "key", "Home records", "adult"], ["budget", "sheet", "Budget", "adult"],
-  ["-"], ["kiosk", "grid", "Kitchen display"], ["activity", "restore", "Activity"], ["trash", "trash", "Trash"], ["settings", "settings", "Settings"], ["admin", "lock", "Admin"]];
+// the menu itself is in extras.js (buildMenu)
 
 function drawShell() {
   const u = S.me.user;
@@ -66,11 +61,9 @@ function drawShell() {
   $("side").replaceChildren(
     el("div", { class: "brand" }, el("img", { src: "/assets/icon.svg", alt: "" }), "Cove"),
     el("button", { class: "btn primary newbtn", onclick: e => globalNew(e.currentTarget) }, icon("plus"), "New"),
-    el("nav", { class: "navlist" }, NAV.filter(([id, , , who]) => (id !== "admin" || S.me.user.admin) && !(who === "adult" && S.me.user.kid) && !(id === "ask" && !S.me.ai)).map(([id, ic, label]) =>
-      id.startsWith("-") ? el("div", { class: "navgroup", text: id.slice(1) }) :
-        el("button", { class: "nav", "data-nav": id, onclick: () => { document.body.classList.remove("nav-open"); location.hash = id === "files" ? "#/files/" : "#/" + id; } }, icon(ic), label,
-          id === "chat" ? el("span", { class: "nbadge hide" }) : null))),
+    buildMenu(),
     el("div", { class: "grow" }),
+    menuFoot(),
     el("div", { class: "me" }, el("div", { class: "avatar", text: name.slice(0, 1).toUpperCase() }),
       el("div", { class: "who" }, el("div", { text: name }), el("div", { class: "muted", style: { fontSize: "12px" }, text: u.email || u.name })),
       S.me.devMode ? null : el("form", { method: "post", action: "/logout" }, el("button", { class: "btn ghost icon", title: "Sign out", "aria-label": "Sign out" }, icon("logout")))));
@@ -95,6 +88,7 @@ function route() {
   const h = location.hash || "#/home";
   const [, section, ...rest] = h.split("/");
   document.querySelectorAll("[data-nav]").forEach(b => b.classList.toggle("on", b.dataset.nav === (section === "search" ? "files" : section)));
+  menuFollow(section === "search" ? "files" : section);
   const c = $("content");
   c.onscroll = null;
   if (section !== "kiosk") document.body.classList.remove("kiosk");
@@ -116,6 +110,7 @@ function route() {
     case "trips": return showTrips(c, rest);
     case "chat": return showChat(c, rest);
     case "ask": return showAsk(c);
+    case "upkeep": return showUpkeep(c);
     case "wishes": return showWishes(c);
     case "health": return showHealth(c);
     case "pantry": return showPantry(c);
@@ -317,6 +312,8 @@ function itemMenu(at, it) {
     { label: it.dir ? "Open" : office ? "Open in Office" : "Open", icon: "open", action: () => openItem(it) },
     { label: it.dir ? "Download as zip" : "Download", icon: "download", action: () => downloadItem(it) },
     { label: "Comments", icon: "text", action: () => commentsDialog(it) },
+    !it.dir && extOf(it.name) === "zip" && !S.share ? { label: "Bring in photos", icon: "image", action: () => importPhotoZip(it.path) } : null,
+    !it.dir && S.me.ai && !S.share && ["pdf", "image"].includes(it.kind) ? { label: "Sort this letter", icon: "mail", action: () => sortLetter(it.path) } : null,
     !it.dir && extOf(it.name) === "zip" && S.edit ? { label: "Unzip here", icon: "archive", action: async () => {
       try { const r = await api("POST", "/api/files/unzip?" + shareQ(), { path: it.path }); toast(`Unpacked ${r.files} files`); goFolder(r.path); } catch (e) { fail(e); }
     } } : null,
@@ -416,6 +413,7 @@ function globalNew(anchor) {
     { label: "Task", icon: "check", action: () => goto("#/tasks", () => { const i = document.querySelector(".add-task input"); i && i.focus(); }) },
     { label: "On the fridge", icon: "pin", action: () => goto("#/fridge", () => fridgeDialog(null, "note", $("content"))) },
     { label: "Scan a document", icon: "pdf", action: () => scanDialog(location.hash.startsWith("#/files") ? S.path : "/Scans") },
+    S.me.user.kid ? null : { label: "Receipt (photo)", icon: "sheet", action: () => snapReceipt() },
     { label: "Recipe", icon: "text", action: () => goto("#/meals", () => recipeDialog(null, $("content"))) },
     S.me.user.kid ? null : { label: "Spending", icon: "sheet", action: () => goto("#/budget", () => { people().then(() => expenseDialog(null, $("content"))); }) },
     { label: "Trip", icon: "place", action: () => goto("#/trips", () => { people().then(() => tripDialog(null, $("content"))); }) },
@@ -802,6 +800,7 @@ async function showSettings(c) {
         el("a", { class: "btn", href: "/api/export" }, icon("download"), "Download everything"),
         S.me.devMode ? null : el("form", { method: "post", action: "/logout" }, el("button", { class: "btn" }, icon("logout"), "Sign out")))),
     appearanceSettings(),
+    menuSettings(),
     notificationSettings(),
     (() => { const b = el("div"); api("GET", "/api/settings").then(st => put(b, briefingSettings(st, x => api("PUT", "/api/settings", x)))).catch(() => {}); return b; })(),
     el("div", { class: "card section" }, el("div", { class: "row", style: { alignItems: "flex-start" } },
@@ -1896,8 +1895,10 @@ async function showFridge(c) {
   c.replaceChildren(
     el("div", { class: "bar" }, el("div", { class: "page-title", style: { margin: 0 }, text: "Fridge" }),
       el("span", { class: "muted", style: { fontSize: "13px" }, text: "Everyone in the household sees this." }), el("div", { class: "grow" }), photo,
-      el("button", { class: "btn", onclick: () => pollDialog(c) }, icon("star"), el("span", { class: "lbl", text: "Poll" })),
-      el("button", { class: "btn", onclick: () => countdownDialog(c) }, icon("clock"), el("span", { class: "lbl", text: "Countdown" })),
+      el("button", { class: "btn", onclick: e => popMenu(e.currentTarget, [
+        { label: "Poll", icon: "star", action: () => pollDialog(c) },
+        { label: "Countdown", icon: "clock", action: () => countdownDialog(c) },
+        { label: "Guest Wi-Fi card", icon: "qr", action: () => wifiDialog(c) }]) }, icon("more"), el("span", { class: "lbl", text: "More" })),
       el("button", { class: "btn", onclick: () => fridgeDialog(null, "list", c) }, icon("check"), el("span", { class: "lbl", text: "List" })),
       el("button", { class: "btn", onclick: () => photo.click() }, icon("image"), el("span", { class: "lbl", text: "Photo" })),
       el("button", { class: "btn primary", onclick: () => fridgeDialog(null, "note", c) }, icon("plus"), el("span", { class: "lbl", text: "Note" }))),
@@ -1921,6 +1922,7 @@ function fridgeCard(n, c, small) {
         if (c) showFridge(c);
       } }), el("span", { text: it.text }), it.done && it.by ? el("small", { text: it.by }) : null))));
     fridgeExtra(n, c, card);
+    if (n.kind === "wifi") { card.querySelector(".ftext")?.remove(); wifiCard(n, card); }
   }
   card.append(meta);
   if (!small) card.onclick = e => { if (!e.target.closest("input, label, .popt")) fridgeMenu(e, n, c); };

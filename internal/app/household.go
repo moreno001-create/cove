@@ -96,6 +96,8 @@ var hhKinds = map[string]hhKind{
 	"health":  {decode: decodeAs[healthRecord], privateOK: true},
 	"pantry":  {decode: decodeAs[pantryItem]},
 	"journal": {decode: decodeAs[journal], privateOK: true},
+	"reward":  {decode: decodeAs[reward], adultsEdit: true},
+	"upkeep":  {decode: decodeAs[upkeep]},
 }
 
 // --- the kinds
@@ -331,11 +333,12 @@ type expense struct {
 	PaidBy   string   `json:"paidBy"`
 	Split    []string `json:"split"` // shared equally between them (empty: not shared)
 	Category string   `json:"category"`
-	Settle   bool     `json:"settle"` // paying someone back: PaidBy gave Amount to Split[0]
+	Settle   bool     `json:"settle"`  // paying someone back: PaidBy gave Amount to Split[0]
+	Receipt  string   `json:"receipt"` // its photo, in the owner's files
 }
 
 func (e *expense) clean() error {
-	e.Title, e.PaidBy, e.Category, e.Split = clip(e.Title, 200), clip(e.PaidBy, 64), clip(e.Category, 64), trimList(e.Split, 20)
+	e.Title, e.PaidBy, e.Category, e.Split, e.Receipt = clip(e.Title, 200), clip(e.PaidBy, 64), clip(e.Category, 64), trimList(e.Split, 20), clip(e.Receipt, 500)
 	if e.Amount <= 0 {
 		return fmt.Errorf("How much was it?")
 	}
@@ -1181,6 +1184,7 @@ func (s *Server) householdReminders(from, to time.Time) {
 		}
 	}
 	s.familyReminders(from, to)
+	s.upkeepReminders(from, to)
 	// chores still to do at 4 in the afternoon
 	for _, name := range s.everyone() {
 		loc := s.location(name)
