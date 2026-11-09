@@ -158,7 +158,7 @@ async function showYear(c, rest) {
     favorite ? el("p", {}, el("b", { text: "Most-made dinner: " }), `${favorite[0]} (${favorite[1]} times)`) : null,
     champ && champ.earned ? el("p", {}, el("b", { text: "Chore champion: " }), champ.who) : null,
     yJournal.length ? el("div", {}, el("h2", { text: "From your journal" }), el("p", { class: "muted", style: { fontSize: "12.5px" }, text: "Only you see these." }),
-      yJournal.slice(-6).map(j => el("blockquote", {}, el("b", { text: parseYmd(j.date).toLocaleDateString([], { month: "long", day: "numeric" }) + ": " }), firstLineOf(j.text)))) : null));
+      yJournal.slice(-6).map(j => el("blockquote", {}, el("b", { text: parseYmd(j.date).toLocaleDateString([], { month: "long", day: "numeric" }) + ": " }), firstLineOf(j.text).replace(/[*_`#>]/g, "")))) : null));
 }
 
 // --- the insurance list: everything in Home records, with prices and receipts, to print or save as PDF
