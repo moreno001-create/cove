@@ -51,6 +51,7 @@ func migrateHousehold(db interface {
 	db.Exec(`ALTER TABLE users ADD COLUMN kid INTEGER NOT NULL DEFAULT 0`)
 	db.Exec(`ALTER TABLE fridge ADD COLUMN date TEXT NOT NULL DEFAULT ''`)
 	db.Exec(`ALTER TABLE search_files ADD COLUMN embedded INTEGER NOT NULL DEFAULT 0`)
+	db.Exec(`UPDATE hh SET private = 1 WHERE kind = 'journal'`) // the journal is personal now
 }
 
 type cleaner interface {
@@ -63,6 +64,7 @@ type hhKind struct {
 	adultsOnly bool // kids don't see it
 	adultsEdit bool // kids see it but don't change it
 	privateOK  bool
+	private    bool // always private: only its writer ever sees it (the journal)
 	// view can hide a record from u or change what u sees of it; merge combines a change with what was there.
 	view  func(u user, row hhRow, m map[string]any) bool
 	merge func(u user, old, next []byte) []byte
@@ -95,7 +97,7 @@ var hhKinds = map[string]hhKind{
 	"med":     {decode: decodeAs[med], privateOK: true},
 	"health":  {decode: decodeAs[healthRecord], privateOK: true},
 	"pantry":  {decode: decodeAs[pantryItem]},
-	"journal": {decode: decodeAs[journal], privateOK: true},
+	"journal": {decode: decodeAs[journal], private: true},
 	"reward":  {decode: decodeAs[reward], adultsEdit: true},
 	"upkeep":  {decode: decodeAs[upkeep]},
 }
@@ -549,7 +551,7 @@ func (s *Server) saveHH(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	var in hhInput
 	json.Unmarshal(raw, &in)
-	in.Private = in.Private && k.privateOK
+	in.Private = in.Private && k.privateOK || k.private
 	data, _ := json.Marshal(v)
 	now := time.Now().Unix()
 	var row hhRow
@@ -564,7 +566,7 @@ func (s *Server) saveHH(w http.ResponseWriter, r *http.Request, u user) {
 			return
 		}
 		if old.Owner != u.Name {
-			in.Private = old.Private
+			in.Private = old.Private || k.private
 		}
 		if k.merge != nil {
 			data = k.merge(u, old.Data, data)

@@ -186,17 +186,17 @@ async function showJournal(c) {
   let list, mem;
   try { [list, mem] = await Promise.all([HH.list("journal"), api("GET", "/api/memories").catch(() => ({ photos: [], journal: [] }))]); } catch (e) { return fail(e); }
   list.sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created);
-  put(c, pageHead("Journal", "The family's days, in a few words and photos.", btn("Write", "edit", () => journalDialog(null, c), "primary")),
+  put(c, pageHead("My journal", "Just for you: nobody else in the family sees it.", btn("Write", "edit", () => journalDialog(null, c), "primary")),
     memoriesCard(mem),
     list.length ? el("div", { class: "journal" }, list.map(j => el("div", { class: "card jentry" },
-      el("div", { class: "jhead" }, el("b", { text: parseYmd(j.date).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" }) }), el("span", { class: "muted", text: " · " + j.who }),
-        el("div", { class: "grow" }), j.owner === S.me.user.name ? btn("", "edit", () => journalDialog(j, c), "ghost icon") : null),
+      el("div", { class: "jhead" }, el("b", { text: parseYmd(j.date).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" }) }),
+        el("div", { class: "grow" }), btn("", "edit", () => journalDialog(j, c), "ghost icon")),
       j.text ? el("div", { class: "md" }, markdown(j.text)) : null,
       (j.photos || []).length ? el("div", { class: "pgrid", style: { marginTop: "8px" } }, j.photos.map((p, i) => el("div", { class: "ph", onclick: () => openViewer({
         items: j.photos.map(x => ({ name: baseName(x), path: x, kind: "image" })), index: i, url: x => `/api/journal/${j.id}/photo?path=${encodeURIComponent(x.path)}`,
         thumb: (x, w) => `/api/journal/${j.id}/photo?w=${w}&path=${encodeURIComponent(x.path)}`, download: x => `/api/journal/${j.id}/photo?path=${encodeURIComponent(x.path)}` }) },
         el("img", { src: `/api/journal/${j.id}/photo?w=320&path=${encodeURIComponent(p)}`, loading: "lazy", alt: "" })))) : null))) :
-      emptyCard("edit", "Nothing written yet", "A line a day: what happened, what someone said, a photo. In a year, “on this day” brings it back."));
+      emptyCard("lock", "Nothing written yet", "A line a day, just for you: what happened, what someone said, a photo. In a year, “on this day” brings it back."));
 }
 
 function memoriesCard(mem) {
@@ -222,7 +222,7 @@ function journalDialog(j, c) {
     draw();
   } });
   draw();
-  dialog({ title: j.id ? "Journal" : "Write in the journal", wide: true, body: el("div", {}, field("Day", date), field("", text), up, strip),
+  dialog({ title: j.id ? "My journal" : "Write in your journal", wide: true, body: el("div", {}, field("Day", date), field("", text), up, strip),
     buttons: [j.id ? { label: "Delete", danger: true, action: async () => { await HH.del("journal", j.id).catch(fail); showJournal(c); } } : null, "grow", { label: "Cancel" },
       { label: "Save", primary: true, action: async () => { await HH.save("journal", { ...j, date: date.value, text: text.value, photos }); showJournal(c); } }].filter(Boolean) });
 }

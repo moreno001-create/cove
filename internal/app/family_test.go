@@ -273,3 +273,35 @@ func TestHomeAssistant(t *testing.T) {
 		t.Errorf("calls: %v", called)
 	}
 }
+
+func TestJournalIsPrivate(t *testing.T) {
+	p := newPeople(t, nil, "alice", "bob")
+	p.s.db.Exec(`UPDATE users SET admin = 1 WHERE name = 'bob'`) // not even an admin
+	var j map[string]any
+	if c := p.as("alice", "POST", "/api/hh/journal", journal{Text: "Dear diary", Photos: []string{"/x.jpg"}}, &j); c != 201 || j["private"] != true {
+		t.Fatalf("entry: %d %v", c, j)
+	}
+	var list []map[string]any
+	p.as("bob", "GET", "/api/hh/journal", nil, &list)
+	if len(list) != 0 {
+		t.Errorf("bob sees alice's journal: %v", list)
+	}
+	id := int64(j["id"].(float64))
+	if c := p.as("bob", "PUT", fmt.Sprintf("/api/hh/journal/%d", id), journal{Text: "edited"}, nil); c != 404 {
+		t.Errorf("bob changed it: %d", c)
+	}
+	if c := p.as("bob", "GET", fmt.Sprintf("/api/journal/%d/photo?path=/x.jpg", id), nil, nil); c != 404 {
+		t.Errorf("bob saw a photo in it: %d", c)
+	}
+	p.as("alice", "GET", "/api/hh/journal", nil, &list)
+	if len(list) != 1 {
+		t.Errorf("alice doesn't see her own entry: %v", list)
+	}
+	// entries written before the journal became personal are made private
+	p.s.db.Exec(`UPDATE hh SET private = 0 WHERE kind = 'journal'`)
+	migrateHousehold(p.s.db)
+	p.as("bob", "GET", "/api/hh/journal", nil, &list)
+	if len(list) != 0 {
+		t.Errorf("an old entry stayed shared: %v", list)
+	}
+}

@@ -214,7 +214,7 @@ const MENU = {
   groups: [
     ["Files", [["files", "folder", "My files"], ["photos", "image", "Photos"], ["recent", "clock", "Recent"], ["shared", "inbox", "Shared with me"], ["links", "share", "Shared links", "adult"]]],
     ["Plans", [["calendar", "calendar", "Calendar"], ["tasks", "check", "Tasks"], ["meals", "text", "Meals"], ["chores", "star", "Chores"], ["trips", "place", "Trips"]]],
-    ["Family", [["contacts", "user", "Contacts"], ["notes", "edit", "Notes"], ["journal", "text", "Journal"], ["wishes", "star", "Wish lists"], ["health", "clock", "Health"]]],
+    ["Family", [["contacts", "user", "Contacts"], ["notes", "edit", "Notes"], ["journal", "lock", "My journal"], ["wishes", "star", "Wish lists"], ["health", "clock", "Health"]]],
     ["House", [["pantry", "inbox", "Pantry"], ["upkeep", "settings", "Maintenance"], ["records", "key", "Home records", "adult"], ["budget", "sheet", "Budget", "adult"]]],
   ],
   bottom: [["kiosk", "grid", "Kitchen display"], ["activity", "restore", "Activity"], ["trash", "trash", "Trash"], ["settings", "settings", "Settings"], ["admin", "lock", "Admin", "admin"]],
