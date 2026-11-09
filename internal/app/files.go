@@ -262,6 +262,7 @@ func (s *Server) writeFile(user, p string, body io.Reader, replace bool, mod tim
 		return "", err
 	}
 	s.changed("files", s.fileWatchers(user)...)
+	s.readSoon(user)
 	return final, nil
 }
 

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"net/http"
 	"path"
@@ -540,6 +541,9 @@ func (s *Server) householdContext(ctx context.Context, u user, q, docPath string
 			}
 		}
 	}
+	// the files themselves: what's there, recently opened first (and, for a small library, how each begins)
+	s.indexUser(u.Name, 2*time.Second)
+	b.WriteString(s.filesOverview(u))
 	// documents: by meaning, and by words
 	seen := map[string]bool{}
 	docs := 0
@@ -603,6 +607,83 @@ func anyWords(q string) string {
 		}
 	}
 	return strings.Join(parts, " OR ")
+}
+
+// filesOverview lists u's files for the model: the recently opened, then the rest (up to 300), each with its
+// folder, size and date; when there are only a few documents, the start of each one's text too.
+func (s *Server) filesOverview(u user) string {
+	var b strings.Builder
+	root := "files/" + u.Name
+	type f struct {
+		path string
+		info fs.FileInfo
+	}
+	var list []f
+	total := 0
+	fs.WalkDir(s.data.FS(), root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || p == root {
+			return nil
+		}
+		if hidden(d.Name()) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		total++
+		if len(list) < 300 {
+			if info, err := d.Info(); err == nil {
+				list = append(list, f{strings.TrimPrefix(p, root+"/"), info})
+			}
+		}
+		return nil
+	})
+	fmt.Fprintf(&b, "\n## %s's files (%d in all)\n", displayName(u), total)
+	if total == 0 {
+		b.WriteString("None yet.\n")
+		return b.String()
+	}
+	recent := map[string]bool{}
+	for _, r := range s.recentFor(u, 15) {
+		if r.Owner == u.Name {
+			recent[strings.TrimPrefix(r.Path, "/")] = true
+		}
+	}
+	sort.SliceStable(list, func(i, j int) bool {
+		if recent[list[i].path] != recent[list[j].path] {
+			return recent[list[i].path]
+		}
+		return list[i].info.ModTime().After(list[j].info.ModTime())
+	})
+	docs := 0
+	for _, x := range list {
+		if indexable(x.path) {
+			docs++
+		}
+	}
+	for _, x := range list {
+		fmt.Fprintf(&b, "- /%s (%s, %s, changed %s", x.path, kindOf(x.path, false), fmtBytes(x.info.Size()), x.info.ModTime().Format("Jan 2, 2006"))
+		if recent[x.path] {
+			b.WriteString(", opened lately")
+		}
+		b.WriteString(")\n")
+		if docs <= 12 && indexable(x.path) {
+			var body string
+			s.db.QueryRow(`SELECT body FROM search_text WHERE owner = ? AND path = ?`, u.Name, x.path).Scan(&body)
+			if body = strings.Join(strings.Fields(body), " "); body != "" {
+				fmt.Fprintf(&b, "  Begins: %s\n", firstWords(body, 600))
+			} else {
+				b.WriteString("  (no text in it yet)\n")
+			}
+		}
+	}
+	if total > len(list) {
+		fmt.Fprintf(&b, "…and %d more.\n", total-len(list))
+	}
+	return b.String()
 }
 
 func whenText(o occurrence, loc *time.Location) string {

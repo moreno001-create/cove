@@ -448,6 +448,9 @@ func TestAskCoveAndSmartSearch(t *testing.T) {
 		strings.Contains(stream, "hmm") || !strings.Contains(stream, `"done":true`) {
 		t.Errorf("stream: %s", stream)
 	}
+	if !strings.Contains(seen, "- /Papers/Menu.txt (text") || !strings.Contains(seen, "Begins: Pizza pizza pizza") || !strings.Contains(seen, "files (2 in all)") {
+		t.Errorf("the model wasn't told what files there are: %s", seen)
+	}
 	if !strings.Contains(seen, "55-123") || !strings.Contains(seen, "Walk the dog") || !strings.Contains(seen, "Alice") {
 		t.Errorf("what the model was told: %s", seen)
 	}

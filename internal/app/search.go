@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -260,6 +261,29 @@ func (s *Server) indexUser(owner string, budget time.Duration) bool {
 		}
 	}
 	return complete
+}
+
+var (
+	soonMu sync.Mutex
+	soonAt = map[string]*time.Timer{}
+)
+
+// readSoon reads a user's changed documents (words, then meaning) half a minute after the last change, rather
+// than at the next 20-minute run, so search and Ask Cove know a new document right away.
+func (s *Server) readSoon(owner string) {
+	soonMu.Lock()
+	defer soonMu.Unlock()
+	if t, ok := soonAt[owner]; ok {
+		t.Reset(30 * time.Second)
+		return
+	}
+	soonAt[owner] = time.AfterFunc(30*time.Second, func() {
+		soonMu.Lock()
+		delete(soonAt, owner)
+		soonMu.Unlock()
+		s.indexUser(owner, 0)
+		s.embedPending(owner, 10*time.Minute)
+	})
 }
 
 func (s *Server) indexEvery(d time.Duration) {
