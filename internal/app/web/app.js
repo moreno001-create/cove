@@ -1843,7 +1843,7 @@ const STICKY = { yellow: "#fff3a6", pink: "#ffd3e2", blue: "#cfe6ff", green: "#d
 function aiAdmin() {
   const box = el("div", { class: "card section" }, el("h3", { text: "AI (Ask Cove and smart search)" }), el("p", { class: "muted", text: "Loading…" }));
   api("GET", "/api/admin/ai").then(st => {
-    const url = el("input", { class: "input", value: st.config.url || "", placeholder: "http://192.168.4.62:1234/v1 (LM Studio) or http://192.168.4.62:11434/v1 (Ollama)" });
+    const url = el("input", { class: "input", value: st.config.url || "", placeholder: "http://host.docker.internal:1234/v1 (LM Studio) or http://host.docker.internal:11434/v1 (Ollama)" });
     const model = el("select", { class: "input" }), embed = el("select", { class: "input" });
     const fill = (ids) => {
       model.replaceChildren(el("option", { value: "", text: "— Off —" }), ...ids.filter(i => !/embed/i.test(i)).map(i => el("option", { value: i, text: i, selected: i === st.config.model })));
