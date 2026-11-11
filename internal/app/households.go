@@ -262,6 +262,12 @@ func (s *Server) deleteHousehold(w http.ResponseWriter, r *http.Request, u user)
 	var members, things int
 	s.db.QueryRow(`SELECT count(*) FROM household_members WHERE household = ?`, id).Scan(&members)
 	for _, t := range householdTables {
+		if t == "chat_rooms" { // an empty Family room is made just by opening Chat: only messages count
+			var n int
+			s.db.QueryRow(`SELECT count(*) FROM chat_messages m JOIN chat_rooms r ON r.id = m.room WHERE r.household = ?`, id).Scan(&n)
+			things += n
+			continue
+		}
 		var n int
 		s.db.QueryRow(`SELECT count(*) FROM `+t+` WHERE household = ?`, id).Scan(&n)
 		things += n
@@ -270,6 +276,7 @@ func (s *Server) deleteHousehold(w http.ResponseWriter, r *http.Request, u user)
 		jsonError(w, http.StatusConflict, "Only an empty household can be removed: take everyone out first, and it must have nothing on its Fridge, lists or chat.")
 		return
 	}
+	s.db.Exec(`DELETE FROM chat_rooms WHERE household = ?`, id)
 	s.db.Exec(`DELETE FROM households WHERE id = ?`, id)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

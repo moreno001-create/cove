@@ -160,6 +160,15 @@ func TestTwoHouseholds(t *testing.T) {
 	if c := p.as("mom", "DELETE", fmt.Sprintf("/api/admin/households/%d", joneses), nil, nil); c != 409 {
 		t.Errorf("deleted a household with people: %d", c)
 	}
+	// an empty one can, even after someone opened its chat
+	var empty struct{ ID int64 }
+	p.as("mom", "POST", "/api/admin/households", map[string]string{"name": "Spare"}, &empty)
+	p.as("mom", "POST", fmt.Sprintf("/api/admin/households/%d/members", empty.ID), map[string]any{"user": "mom", "in": true}, nil)
+	p.asIn("mom", empty.ID, "GET", "/api/chat", nil, nil)
+	p.as("mom", "POST", fmt.Sprintf("/api/admin/households/%d/members", empty.ID), map[string]any{"user": "mom", "in": false}, nil)
+	if c := p.as("mom", "DELETE", fmt.Sprintf("/api/admin/households/%d", empty.ID), nil, nil); c != 200 {
+		t.Errorf("removing an empty household: %d", c)
+	}
 }
 
 func TestSharingOverview(t *testing.T) {
