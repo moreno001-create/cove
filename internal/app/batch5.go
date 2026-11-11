@@ -192,7 +192,7 @@ func (s *Server) toGoal(w http.ResponseWriter, r *http.Request, u user) {
 		jsonError(w, http.StatusBadRequest, "How much?")
 		return
 	}
-	row, ok := s.hhRow("goal", r.PathValue("id"))
+	row, ok := s.homeRow(u, "goal", r.PathValue("id"))
 	if !ok {
 		jsonError(w, http.StatusNotFound, "That goal is gone.")
 		return

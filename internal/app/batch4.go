@@ -58,6 +58,7 @@ func (s *Server) shortcut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.db.QueryRow(`SELECT admin, kid, guest FROM users WHERE name = ?`, u.Name).Scan(&u.Admin, &u.Kid, &u.Guest)
+	u.Home = s.homeFor(r, u.Name)
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 8000))
 	q := strings.TrimSpace(string(body))
 	var in struct {
@@ -136,29 +137,32 @@ func aisleOf(item string) string {
 	return "Other"
 }
 
-// shoppingList is the fridge's shopping list (making none): its id and items.
-func (s *Server) shoppingList() (int64, []fridgeItem) {
+// shoppingList is the household's shopping list on its fridge (making none): its id and items.
+func (s *Server) shoppingList(home int64) (int64, []fridgeItem) {
 	var id int64
 	var items string
-	s.db.QueryRow(`SELECT id, items FROM fridge WHERE kind = 'list' AND lower(trim(text)) IN ('shopping', 'shopping list', 'groceries')
-		AND (expires = 0 OR expires > ?) ORDER BY created DESC LIMIT 1`, time.Now().Unix()).Scan(&id, &items)
+	s.db.QueryRow(`SELECT id, items FROM fridge WHERE household = ? AND kind = 'list' AND lower(trim(text)) IN ('shopping', 'shopping list', 'groceries')
+		AND (expires = 0 OR expires > ?) ORDER BY created DESC LIMIT 1`, home, time.Now().Unix()).Scan(&id, &items)
 	var list []fridgeItem
 	json.Unmarshal([]byte(items), &list)
 	return id, list
 }
 
-// remember counts what goes on the shopping list, for "the usual".
-func (s *Server) remember(items []string) {
+// remember counts what goes on a household's shopping list, for "the usual" (keyed "household|item").
+func (s *Server) remember(home int64, items []string) {
 	for _, it := range items {
 		if it = clip(it, 200); it != "" {
 			s.db.Exec(`INSERT INTO shopping_history (item, shown, times, last) VALUES (?, ?, 1, ?)
-				ON CONFLICT(item) DO UPDATE SET times = times + 1, last = excluded.last, shown = excluded.shown`, strings.ToLower(it), it, time.Now().Unix())
+				ON CONFLICT(item) DO UPDATE SET times = times + 1, last = excluded.last, shown = excluded.shown`, fmt.Sprintf("%d|%s", home, strings.ToLower(it)), it, time.Now().Unix())
 		}
 	}
 }
 
 func (s *Server) shopping(w http.ResponseWriter, r *http.Request, u user) {
-	id, list := s.shoppingList()
+	if !needHome(w, u) {
+		return
+	}
+	id, list := s.shoppingList(u.Home)
 	type row struct {
 		fridgeItem
 		Index int    `json:"index"`
@@ -179,10 +183,10 @@ func (s *Server) shopping(w http.ResponseWriter, r *http.Request, u user) {
 	order["Other"] = len(aisles)
 	sort.SliceStable(rows, func(i, j int) bool { return order[rows[i].Aisle] < order[rows[j].Aisle] })
 	usual := []string{}
-	if res, err := s.db.Query(`SELECT item, shown FROM shopping_history WHERE times >= 2 ORDER BY times DESC, last DESC LIMIT 40`); err == nil {
+	if res, err := s.db.Query(`SELECT item, shown FROM shopping_history WHERE item LIKE ? AND times >= 2 ORDER BY times DESC, last DESC LIMIT 40`, fmt.Sprintf("%d|%%", u.Home)); err == nil {
 		for res.Next() {
 			var k, shown string
-			if res.Scan(&k, &shown) == nil && !on[k] && len(usual) < 24 {
+			if res.Scan(&k, &shown) == nil && !on[strings.ToLower(shown)] && len(usual) < 24 {
 				usual = append(usual, shown)
 			}
 		}
@@ -193,7 +197,7 @@ func (s *Server) shopping(w http.ResponseWriter, r *http.Request, u user) {
 
 // shoppingDone clears what was bought from the list, and puts it in the pantry (one more of each it knows).
 func (s *Server) shoppingDone(w http.ResponseWriter, r *http.Request, u user) {
-	id, list := s.shoppingList()
+	id, list := s.shoppingList(u.Home)
 	if id == 0 {
 		writeJSON(w, http.StatusOK, map[string]int{"bought": 0, "stocked": 0})
 		return
@@ -225,8 +229,8 @@ func (s *Server) shoppingDone(w http.ResponseWriter, r *http.Request, u user) {
 			}
 		}
 	}
-	s.changed("fridge", s.everyone()...)
-	s.changed("household", s.everyone()...)
+	s.changed("fridge", s.members(u.Home)...)
+	s.changed("household", s.members(u.Home)...)
 	writeJSON(w, http.StatusOK, map[string]int{"bought": len(bought), "stocked": stocked})
 }
 
@@ -358,18 +362,20 @@ func (x *sitterInfo) clean() error {
 }
 func (x *sitterInfo) label() string { return "Babysitter page" }
 
-func (s *Server) sitterRecord() (hhRow, sitterInfo, bool) {
-	rows := s.hhRows("sitter")
-	if len(rows) == 0 {
-		return hhRow{}, sitterInfo{}, false
+// sitterRecord is a household's babysitter page.
+func (s *Server) sitterRecord(home int64) (hhRow, sitterInfo, bool) {
+	for _, row := range slices.Backward(s.hhRows("sitter")) {
+		if row.Household == home && home != 0 {
+			var x sitterInfo
+			json.Unmarshal(row.Data, &x)
+			return row, x, true
+		}
 	}
-	var x sitterInfo
-	json.Unmarshal(rows[len(rows)-1].Data, &x)
-	return rows[len(rows)-1], x, true
+	return hhRow{}, sitterInfo{}, false
 }
 
 func (s *Server) sitterLinks(w http.ResponseWriter, r *http.Request, u user) {
-	rows, err := s.db.Query(`SELECT token, label, created, expires, created_by FROM sitter_links WHERE expires > ? ORDER BY created DESC`, time.Now().Unix())
+	rows, err := s.db.Query(`SELECT token, label, created, expires, created_by FROM sitter_links WHERE household = ? AND expires > ? ORDER BY created DESC`, u.Home, time.Now().Unix())
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -407,13 +413,13 @@ func (s *Server) makeSitterLink(w http.ResponseWriter, r *http.Request, u user) 
 	if in.Hours <= 0 || in.Hours > 24*14 {
 		in.Hours = 24
 	}
-	if _, _, ok := s.sitterRecord(); !ok {
+	if _, _, ok := s.sitterRecord(u.Home); !ok {
 		jsonError(w, http.StatusBadRequest, "Fill in the babysitter page first.")
 		return
 	}
 	tok := randomToken(18)
 	exp := time.Now().Add(time.Duration(in.Hours) * time.Hour).Unix()
-	s.db.Exec(`INSERT INTO sitter_links (token, created_by, label, created, expires) VALUES (?, ?, ?, ?, ?)`, tok, u.Name, clip(in.Label, 80), time.Now().Unix(), exp)
+	s.db.Exec(`INSERT INTO sitter_links (household, token, created_by, label, created, expires) VALUES (?, ?, ?, ?, ?, ?)`, u.Home, tok, u.Name, clip(in.Label, 80), time.Now().Unix(), exp)
 	writeJSON(w, http.StatusCreated, map[string]any{"token": tok, "url": s.cfg.URL + "/sitter/" + tok, "expires": exp})
 }
 
@@ -422,7 +428,7 @@ func (s *Server) endSitterLink(w http.ResponseWriter, r *http.Request, u user) {
 		jsonError(w, http.StatusForbidden, "A grown-up ends the link.")
 		return
 	}
-	s.db.Exec(`DELETE FROM sitter_links WHERE token = ?`, r.PathValue("token"))
+	s.db.Exec(`DELETE FROM sitter_links WHERE token = ? AND household = ?`, r.PathValue("token"), u.Home)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -451,12 +457,12 @@ a.tel{display:inline-block;margin-top:4px;padding:6px 12px;border-radius:8px;bac
 
 // sitterView is the babysitter's page: no sign-in, only what's written for them, until the link runs out.
 func (s *Server) sitterView(w http.ResponseWriter, r *http.Request) {
-	var exp int64
-	if s.db.QueryRow(`SELECT expires FROM sitter_links WHERE token = ?`, r.PathValue("token")).Scan(&exp) != nil || exp < time.Now().Unix() {
+	var exp, home int64
+	if s.db.QueryRow(`SELECT expires, household FROM sitter_links WHERE token = ?`, r.PathValue("token")).Scan(&exp, &home) != nil || exp < time.Now().Unix() {
 		http.Error(w, "This link has ended. Ask the family for a new one.", http.StatusNotFound)
 		return
 	}
-	_, info, ok := s.sitterRecord()
+	_, info, ok := s.sitterRecord(home)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -470,7 +476,7 @@ func (s *Server) sitterView(w http.ResponseWriter, r *http.Request) {
 	if info.Wifi {
 		var id int64
 		var name, items string
-		if s.db.QueryRow(`SELECT id, text, items FROM fridge WHERE kind = 'wifi' ORDER BY created DESC LIMIT 1`).Scan(&id, &name, &items) == nil {
+		if s.db.QueryRow(`SELECT id, text, items FROM fridge WHERE kind = 'wifi' AND household = ? ORDER BY created DESC LIMIT 1`, home).Scan(&id, &name, &items) == nil {
 			var list []fridgeItem
 			json.Unmarshal([]byte(items), &list)
 			pass := ""
@@ -535,11 +541,7 @@ func (s *Server) homeworkReminders(from, to time.Time) {
 
 func (s *Server) callInfo(w http.ResponseWriter, r *http.Request, u user) {
 	base := s.setting("call.url")
-	room := s.setting("call.room")
-	if room == "" {
-		room = "cove-" + strings.ToLower(randomToken(9))
-		s.setSetting("call.room", room)
-	}
+	room := s.callRoom(u.Home)
 	writeJSON(w, http.StatusOK, map[string]string{"url": base, "room": room})
 }
 
@@ -549,13 +551,24 @@ func (s *Server) startCall(w http.ResponseWriter, r *http.Request, u user) {
 		jsonError(w, http.StatusBadRequest, "An admin sets the video call's address first (Admin → Home connections).")
 		return
 	}
-	room := s.setting("call.room")
+	room := s.callRoom(u.Home)
 	link := base + "/join?room=" + room
-	for _, o := range everyoneBut(s.db, u.Name) {
+	for _, o := range s.othersIn(u.Home, u.Name) {
 		s.notify(o, displayName(u)+" started a family video call: tap to join", "")
 		go s.pushTo(o, displayName(u)+" is calling the family", link)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"link": link + "&name=" + urlQuery(displayName(u))})
+}
+
+// callRoom is a household's own video call room.
+func (s *Server) callRoom(home int64) string {
+	key := fmt.Sprintf("call.room.%d", home)
+	room := s.setting(key)
+	if room == "" {
+		room = "cove-" + strings.ToLower(randomToken(9))
+		s.setSetting(key, room)
+	}
+	return room
 }
 
 func urlQuery(s string) string { return url.QueryEscape(s) }

@@ -369,10 +369,12 @@ func (s *Server) householdContext(ctx context.Context, u user, q, docPath string
 	var b strings.Builder
 	fmt.Fprintf(&b, "Now: %s. You're talking with %s.\n", now.Format("Monday, January 2, 2006, 3:04 PM (MST)"), displayName(u))
 	var people []string
-	for _, p := range s.everyone() {
+	for _, p := range s.members(u.Home) {
 		people = append(people, s.displayOf(p))
 	}
-	fmt.Fprintf(&b, "People at home in Cove: %s.\n", strings.Join(people, ", "))
+	var homeName string
+	s.db.QueryRow(`SELECT name FROM households WHERE id = ?`, u.Home).Scan(&homeName)
+	fmt.Fprintf(&b, "Household: %s. People in it: %s.\n", firstNonEmpty(homeName, "none yet"), strings.Join(people, ", "))
 	var sources []source
 	if docPath != "" {
 		p := "/" + cleanRel(docPath)

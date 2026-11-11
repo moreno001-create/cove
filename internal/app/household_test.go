@@ -192,7 +192,8 @@ func TestPollsCountdownsChat(t *testing.T) {
 	p.as("bob", "GET", "/api/fridge", nil, &notes)
 	found := false
 	for _, n := range notes {
-		found = found || n.Kind == "countdown" && n.Date == day && n.Expires > time.Now().AddDate(0, 0, 10).Unix()
+		end, _ := time.ParseInLocation("2006-01-02", day, p.s.location("alice"))
+		found = found || n.Kind == "countdown" && n.Date == day && n.Expires == end.AddDate(0, 0, 1).Unix()
 	}
 	if !found {
 		t.Errorf("countdown: %+v", notes)

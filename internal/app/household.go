@@ -426,17 +426,18 @@ func (t *trip) label() string { return t.Name }
 // --- storage
 
 type hhRow struct {
-	ID      int64
-	Kind    string
-	Owner   string
-	Private bool
-	Data    []byte
-	Created int64
-	Updated int64
+	ID        int64
+	Household int64
+	Kind      string
+	Owner     string
+	Private   bool
+	Data      []byte
+	Created   int64
+	Updated   int64
 }
 
 func (s *Server) hhRows(kind string) []hhRow {
-	rows, err := s.db.Query(`SELECT id, kind, owner, private, data, created, updated FROM hh WHERE kind = ? ORDER BY id`, kind)
+	rows, err := s.db.Query(`SELECT id, household, kind, owner, private, data, created, updated FROM hh WHERE kind = ? ORDER BY id`, kind)
 	if err != nil {
 		return nil
 	}
@@ -444,7 +445,7 @@ func (s *Server) hhRows(kind string) []hhRow {
 	var out []hhRow
 	for rows.Next() {
 		var r hhRow
-		if rows.Scan(&r.ID, &r.Kind, &r.Owner, &r.Private, &r.Data, &r.Created, &r.Updated) == nil {
+		if rows.Scan(&r.ID, &r.Household, &r.Kind, &r.Owner, &r.Private, &r.Data, &r.Created, &r.Updated) == nil {
 			out = append(out, r)
 		}
 	}
@@ -453,9 +454,18 @@ func (s *Server) hhRows(kind string) []hhRow {
 
 func (s *Server) hhRow(kind string, id string) (hhRow, bool) {
 	var r hhRow
-	err := s.db.QueryRow(`SELECT id, kind, owner, private, data, created, updated FROM hh WHERE kind = ? AND id = ?`, kind, id).
-		Scan(&r.ID, &r.Kind, &r.Owner, &r.Private, &r.Data, &r.Created, &r.Updated)
+	err := s.db.QueryRow(`SELECT id, household, kind, owner, private, data, created, updated FROM hh WHERE kind = ? AND id = ?`, kind, id).
+		Scan(&r.ID, &r.Household, &r.Kind, &r.Owner, &r.Private, &r.Data, &r.Created, &r.Updated)
 	return r, err == nil
+}
+
+// homeRow is a record of the user's current household (and one they may see), for handlers.
+func (s *Server) homeRow(u user, kind, id string) (hhRow, bool) {
+	r, ok := s.hhRow(kind, id)
+	if !ok || r.Household != u.Home || u.Home == 0 || r.Private && r.Owner != u.Name {
+		return hhRow{}, false
+	}
+	return r, true
 }
 
 // hhItems are the kind's records u sees, decoded.
@@ -468,7 +478,10 @@ func hhItems[T any](s *Server, u user, kind string) []struct {
 		V T
 	}
 	for _, r := range s.hhRows(kind) {
-		if r.Private && r.Owner != u.Name && u.Name != "" { // no name: Cove itself (reminders)
+		if u.Name != "" && (r.Household != u.Home || u.Home == 0) { // no name: Cove itself (reminders), every household
+			continue
+		}
+		if r.Private && r.Owner != u.Name && u.Name != "" {
 			continue
 		}
 		var v T
@@ -503,7 +516,7 @@ func (s *Server) hhKindFor(w http.ResponseWriter, r *http.Request, u user) (stri
 	return name, k, true
 }
 
-// everyone is every user's name.
+// everyone is every user's name (for Cove's own jobs; people's things go to their household's members).
 func (s *Server) everyone() []string {
 	return everyoneBut(s.db, "")
 }
@@ -516,7 +529,7 @@ func (s *Server) listHH(w http.ResponseWriter, r *http.Request, u user) {
 	from, to := r.URL.Query().Get("from"), r.URL.Query().Get("to")
 	out := []map[string]any{}
 	for _, row := range s.hhRows(kind) {
-		if row.Private && row.Owner != u.Name {
+		if row.Household != u.Home || u.Home == 0 || row.Private && row.Owner != u.Name {
 			continue
 		}
 		m := s.hhJSON(row)
@@ -561,7 +574,7 @@ func (s *Server) saveHH(w http.ResponseWriter, r *http.Request, u user) {
 	now := time.Now().Unix()
 	var row hhRow
 	if id := r.PathValue("id"); id != "" {
-		old, found := s.hhRow(kind, id)
+		old, found := s.homeRow(u, kind, id)
 		if !found || old.Private && old.Owner != u.Name || !visibleTo(k, u, old) {
 			jsonError(w, http.StatusNotFound, "That's gone.")
 			return
@@ -583,7 +596,7 @@ func (s *Server) saveHH(w http.ResponseWriter, r *http.Request, u user) {
 		if k.merge != nil { // new records follow the same rules as changes (a kid's new goal starts at nothing saved)
 			data = k.merge(u, []byte("{}"), data)
 		}
-		res, err := s.db.Exec(`INSERT INTO hh (kind, owner, private, data, created, updated) VALUES (?, ?, ?, ?, ?, ?)`, kind, u.Name, in.Private, data, now, now)
+		res, err := s.db.Exec(`INSERT INTO hh (household, kind, owner, private, data, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?)`, u.Home, kind, u.Name, in.Private, data, now, now)
 		if err != nil {
 			jsonError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -640,7 +653,7 @@ func (s *Server) hhAdded(u user, kind string, v any, label string) {
 		}
 	case wish:
 		if x.For != "" && x.For != u.Name { // ideas for someone stay a surprise; tell the others
-			for _, p := range everyoneBut(s.db, u.Name) {
+			for _, p := range s.othersIn(u.Home, u.Name) {
 				if p != x.For {
 					people = append(people, p)
 				}
@@ -660,7 +673,7 @@ func (s *Server) hhChanged(u user, row hhRow) {
 		s.changed("household", u.Name)
 		return
 	}
-	s.changed("household", s.everyone()...)
+	s.changed("household", s.members(row.Household)...)
 }
 
 func (s *Server) deleteHH(w http.ResponseWriter, r *http.Request, u user) {
@@ -668,7 +681,7 @@ func (s *Server) deleteHH(w http.ResponseWriter, r *http.Request, u user) {
 	if !ok {
 		return
 	}
-	row, found := s.hhRow(kind, r.PathValue("id"))
+	row, found := s.homeRow(u, kind, r.PathValue("id"))
 	if !found || row.Private && row.Owner != u.Name || !visibleTo(k, u, row) {
 		jsonError(w, http.StatusNotFound, "That's gone.")
 		return
@@ -741,8 +754,8 @@ func (s *Server) mealsToShopping(w http.ResponseWriter, r *http.Request, u user)
 func (s *Server) addToShopping(u user, things []string) (int, error) {
 	var id int64
 	var items string
-	err := s.db.QueryRow(`SELECT id, items FROM fridge WHERE kind = 'list' AND lower(trim(text)) IN ('shopping', 'shopping list', 'groceries')
-		AND (expires = 0 OR expires > ?) ORDER BY created DESC LIMIT 1`, time.Now().Unix()).Scan(&id, &items)
+	err := s.db.QueryRow(`SELECT id, items FROM fridge WHERE household = ? AND kind = 'list' AND lower(trim(text)) IN ('shopping', 'shopping list', 'groceries')
+		AND (expires = 0 OR expires > ?) ORDER BY created DESC LIMIT 1`, u.Home, time.Now().Unix()).Scan(&id, &items)
 	var list []fridgeItem
 	json.Unmarshal([]byte(items), &list)
 	have := map[string]bool{}
@@ -761,7 +774,7 @@ func (s *Server) addToShopping(u user, things []string) (int, error) {
 	}
 	b, _ := json.Marshal(list)
 	if err != nil {
-		if _, err := s.db.Exec(`INSERT INTO fridge (author, kind, text, color, items, created) VALUES (?, 'list', 'Shopping', 'green', ?, ?)`, u.Name, b, time.Now().Unix()); err != nil {
+		if _, err := s.db.Exec(`INSERT INTO fridge (household, author, kind, text, color, items, created) VALUES (?, ?, 'list', 'Shopping', 'green', ?, ?)`, u.Home, u.Name, b, time.Now().Unix()); err != nil {
 			return 0, err
 		}
 	} else if added > 0 {
@@ -769,7 +782,7 @@ func (s *Server) addToShopping(u user, things []string) (int, error) {
 	}
 	if added > 0 {
 		s.putUp(u, fmt.Sprintf("%d things on the shopping list", added), "")
-		s.remember(things)
+		s.remember(u.Home, things)
 	}
 	return added, nil
 }
@@ -820,7 +833,8 @@ func (s *Server) choreBoard(w http.ResponseWriter, r *http.Request, u user) {
 		cents     int
 	}
 	var all []done
-	if rows, err := s.db.Query(`SELECT id, chore, user, at, points, cents FROM chore_done ORDER BY at`); err == nil {
+	if rows, err := s.db.Query(`SELECT d.id, d.chore, d.user, d.at, d.points, d.cents FROM chore_done d JOIN hh h ON h.id = d.chore
+		WHERE h.household = ? ORDER BY d.at`, u.Home); err == nil {
 		for rows.Next() {
 			var d done
 			if rows.Scan(&d.id, &d.chore, &d.user, &d.at, &d.points, &d.cents) == nil {
@@ -854,7 +868,8 @@ func (s *Server) choreBoard(w http.ResponseWriter, r *http.Request, u user) {
 		chores = append(chores, v)
 	}
 	people := []choreScore{}
-	if rows, err := s.db.Query(`SELECT name, coalesce(nullif(display, ''), name), kid FROM users ORDER BY kid DESC, lower(coalesce(nullif(display, ''), name))`); err == nil {
+	if rows, err := s.db.Query(`SELECT u.name, coalesce(nullif(u.display, ''), u.name), u.kid FROM users u JOIN household_members m ON m.user = u.name
+		WHERE m.household = ? ORDER BY u.kid DESC, lower(coalesce(nullif(u.display, ''), u.name))`, u.Home); err == nil {
 		for rows.Next() {
 			var p choreScore
 			if rows.Scan(&p.Name, &p.Who, &p.Kid) == nil {
@@ -864,7 +879,7 @@ func (s *Server) choreBoard(w http.ResponseWriter, r *http.Request, u user) {
 		rows.Close()
 	}
 	paid := map[string]int{}
-	if rows, err := s.db.Query(`SELECT user, sum(cents) FROM payouts GROUP BY user`); err == nil {
+	if rows, err := s.db.Query(`SELECT user, sum(cents) FROM payouts WHERE household = ? GROUP BY user`, u.Home); err == nil {
 		for rows.Next() {
 			var n string
 			var c int
@@ -919,7 +934,7 @@ func (s *Server) choreBoard(w http.ResponseWriter, r *http.Request, u user) {
 }
 
 func (s *Server) choreDone(w http.ResponseWriter, r *http.Request, u user) {
-	row, found := s.hhRow("chore", r.PathValue("id"))
+	row, found := s.homeRow(u, "chore", r.PathValue("id"))
 	if !found {
 		jsonError(w, http.StatusNotFound, "That chore is gone.")
 		return
@@ -978,7 +993,7 @@ func (s *Server) choreDone(w http.ResponseWriter, r *http.Request, u user) {
 		}
 		s.notify(row.Owner, msg, "#/chores")
 	}
-	s.changed("household", s.everyone()...)
+	s.changed("household", s.members(u.Home)...)
 	writeJSON(w, http.StatusCreated, map[string]int64{"id": id})
 }
 
@@ -993,7 +1008,7 @@ func (s *Server) choreUndo(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	s.db.Exec(`DELETE FROM chore_done WHERE id = ?`, r.PathValue("id"))
-	s.changed("household", s.everyone()...)
+	s.changed("household", s.members(u.Home)...)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -1011,11 +1026,15 @@ func (s *Server) payAllowance(w http.ResponseWriter, r *http.Request, u user) {
 		jsonError(w, http.StatusBadRequest, "Who, and how much?")
 		return
 	}
-	s.db.Exec(`INSERT INTO payouts (user, cents, note, by, at) VALUES (?, ?, ?, ?, ?)`, in.User, in.Cents, clip(in.Note, 200), u.Name, time.Now().Unix())
+	if !s.inHousehold(u.Home, in.User) {
+		jsonError(w, http.StatusBadRequest, "They're not in this household.")
+		return
+	}
+	s.db.Exec(`INSERT INTO payouts (household, user, cents, note, by, at) VALUES (?, ?, ?, ?, ?, ?)`, u.Home, in.User, in.Cents, clip(in.Note, 200), u.Name, time.Now().Unix())
 	if in.User != u.Name && in.Cents > 0 {
 		s.notify(in.User, fmt.Sprintf("%s paid you %s allowance", displayName(u), money(in.Cents)), "#/chores")
 	}
-	s.changed("household", s.everyone()...)
+	s.changed("household", s.members(u.Home)...)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -1203,7 +1222,7 @@ func (s *Server) householdReminders(from, to time.Time) {
 	s.homeworkReminders(from, to)
 	s.rideReminders(from, to)
 	// chores still to do at 4 in the afternoon
-	for _, name := range s.everyone() {
+	for _, name := range s.everyone() { // their chores, in whichever household
 		loc := s.location(name)
 		day := to.In(loc)
 		day = time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, loc)

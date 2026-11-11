@@ -312,7 +312,7 @@ type albumItem struct {
 }
 
 func (s *Server) albumsFor(u user) []album {
-	rows, err := s.db.Query(`SELECT id, owner, name, shared FROM albums WHERE owner = ? OR shared = 1 ORDER BY created DESC`, u.Name)
+	rows, err := s.db.Query(`SELECT id, owner, name, shared FROM albums WHERE owner = ? OR (shared = 1 AND household = ? AND household != 0) ORDER BY created DESC`, u.Name, u.Home)
 	if err != nil {
 		return nil
 	}
@@ -367,22 +367,22 @@ func (s *Server) saveAlbum(w http.ResponseWriter, r *http.Request, u user) {
 			return
 		}
 		s.db.Exec(`UPDATE albums SET name = ?, shared = ? WHERE id = ?`, clip(in.Name, 200), in.Shared, a.ID)
-		s.changed("photos", s.everyone()...)
+		s.changed("photos", s.members(u.Home)...)
 		writeJSON(w, http.StatusOK, map[string]int64{"id": a.ID})
 		return
 	}
-	res, err := s.db.Exec(`INSERT INTO albums (owner, name, shared, created) VALUES (?, ?, ?, ?)`, u.Name, clip(in.Name, 200), in.Shared, time.Now().Unix())
+	res, err := s.db.Exec(`INSERT INTO albums (household, owner, name, shared, created) VALUES (?, ?, ?, ?, ?)`, u.Home, u.Name, clip(in.Name, 200), in.Shared, time.Now().Unix())
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	id, _ := res.LastInsertId()
 	if in.Shared {
-		for _, o := range everyoneBut(s.db, u.Name) {
+		for _, o := range s.othersIn(u.Home, u.Name) {
 			s.notify(o, displayName(u)+" started a shared album: "+clip(in.Name, 200), "#/photos")
 		}
 	}
-	s.changed("photos", s.everyone()...)
+	s.changed("photos", s.members(u.Home)...)
 	writeJSON(w, http.StatusCreated, map[string]int64{"id": id})
 }
 
@@ -394,7 +394,7 @@ func (s *Server) deleteAlbum(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	s.db.Exec(`DELETE FROM album_items WHERE album = ?`, a.ID)
 	s.db.Exec(`DELETE FROM albums WHERE id = ?`, a.ID)
-	s.changed("photos", s.everyone()...)
+	s.changed("photos", s.members(u.Home)...)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -454,7 +454,7 @@ func (s *Server) addToAlbum(w http.ResponseWriter, r *http.Request, u user) {
 	if added > 0 && a.Shared && a.Owner != u.Name {
 		s.notify(a.Owner, displayName(u)+" added photos to "+a.Name, "#/photos")
 	}
-	s.changed("photos", s.everyone()...)
+	s.changed("photos", s.members(u.Home)...)
 	writeJSON(w, http.StatusOK, map[string]int{"added": added})
 }
 
@@ -470,7 +470,7 @@ func (s *Server) removeFromAlbum(w http.ResponseWriter, r *http.Request, u user)
 		return
 	}
 	s.db.Exec(`DELETE FROM album_items WHERE album = ? AND owner = ? AND path = ?`, a.ID, owner, p)
-	s.changed("photos", s.everyone()...)
+	s.changed("photos", s.members(u.Home)...)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

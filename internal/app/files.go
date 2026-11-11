@@ -108,7 +108,11 @@ func (s *Server) listFiles(w http.ResponseWriter, r *http.Request, u user, a acc
 		}
 	}
 	sortItems(items)
-	writeJSON(w, http.StatusOK, map[string]any{"path": a.shown(p), "items": items, "edit": a.edit})
+	out := map[string]any{"path": a.shown(p), "items": items, "edit": a.edit}
+	if a.share == 0 {
+		out["sharing"] = s.sharedIn(u.Name, p)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func sortItems(items []fileItem) {

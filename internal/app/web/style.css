@@ -807,3 +807,17 @@ ol.steps li { margin-bottom: 8px; }
 .inventory th, .inventory td { border-bottom: 1px solid var(--line); padding: 6px; text-align: left; vertical-align: top; }
 .inventory td img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; }
 @media print { .cook { display: none; } .inventory th, .inventory td { border-color: #bbb; color: #000; } }
+
+/* households and "who sees this" */
+.homeswitch { display: flex; align-items: center; gap: 8px; width: calc(100% - 8px); margin: 0 4px 10px; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--sunk); color: var(--text); cursor: pointer; font: inherit; font-weight: 600; text-align: left; }
+.homeswitch:hover { border-color: var(--accent); }
+.homeswitch svg:last-child { width: 14px; height: 14px; transform: rotate(90deg); opacity: .6; }
+.homeswitch.none { color: var(--muted); font-weight: 500; }
+.whosees { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); text-decoration: none; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.whosees svg { width: 13px; height: 13px; }
+.whosees.home { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--accent-soft); }
+.whosees.lock { color: var(--muted); }
+.sharedpill { margin-left: 6px; font-size: 11px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.homecard { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.chip .x { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 0 0 6px; font-size: 14px; }
+.notice { background: var(--accent-soft); padding: 10px 14px; border-radius: 10px; }

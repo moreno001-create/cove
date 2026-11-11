@@ -122,7 +122,12 @@ type person struct {
 
 // listUsers is everyone who has signed in to Cove (the household), to share with.
 func (s *Server) listUsers(w http.ResponseWriter, r *http.Request, u user) {
-	rows, err := s.db.Query(`SELECT name, display FROM users WHERE name != ? ORDER BY lower(coalesce(nullif(display, ''), name))`, u.Name)
+	q, args := `SELECT name, display FROM users WHERE name != ? ORDER BY lower(coalesce(nullif(display, ''), name))`, []any{u.Name}
+	if r.URL.Query().Get("household") != "" { // people in the household being looked at (for chores, trips, rides…)
+		q, args = `SELECT u.name, u.display FROM users u JOIN household_members m ON m.user = u.name WHERE m.household = ? AND u.name != ?
+			ORDER BY lower(coalesce(nullif(u.display, ''), u.name))`, []any{u.Home, u.Name}
+	}
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return

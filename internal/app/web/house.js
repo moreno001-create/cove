@@ -12,7 +12,7 @@ const HH = {
 let PEOPLE = null; // everyone at home: [{name, display}]
 async function people() {
   if (!PEOPLE) {
-    const others = await api("GET", "/api/users").catch(() => []);
+    const others = await api("GET", "/api/users?household=1").catch(() => []); // the household being looked at
     PEOPLE = [{ name: S.me.user.name, display: S.me.user.display || S.me.user.name }, ...others];
   }
   return PEOPLE;
@@ -475,7 +475,7 @@ function scanDialog(folder) {
     const fd = new FormData();
     for (const [i, p] of pages.entries()) fd.append("page", await flatten(p), `page${i + 1}.jpg`);
     const path = joinPath(where.value.trim().replace(/\/+$/, "") || "/", (name.value.trim() || "Scan") + ".pdf");
-    const res = await fetch("/api/scan?path=" + encodeURIComponent(path), { method: "POST", body: fd, headers: { "X-Cove": "1" } });
+    const res = await fetch("/api/scan?path=" + encodeURIComponent(path), { method: "POST", body: fd, headers: { "X-Cove": "1", "X-Cove-Household": coveHome() } });
     const out = await res.json();
     if (!res.ok) throw new Error(out.error || "Saving didn't work");
     toast("Saved " + out.path);
@@ -938,7 +938,7 @@ async function askStream(question, path, log, history) {
   log.scrollTop = log.scrollHeight;
   let text = "", sources = [];
   try {
-    const res = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json", "X-Cove": "1" }, body: JSON.stringify({ question, path, history: history.slice(-10) }) });
+    const res = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json", "X-Cove": "1", "X-Cove-Household": coveHome() }, body: JSON.stringify({ question, path, history: history.slice(-10) }) });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Asking didn't work");
     const reader = res.body.getReader(), dec = new TextDecoder();
     let buf = "";

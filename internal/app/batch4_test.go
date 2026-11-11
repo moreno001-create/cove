@@ -51,7 +51,7 @@ func TestShoppingByAisle(t *testing.T) {
 			}
 		}
 		p.as("alice", "GET", "/api/shopping", nil, &l)
-		id, list := p.s.shoppingList()
+		id, list := p.s.shoppingList(p.home())
 		for j := range list {
 			list[j].Done = true
 		}

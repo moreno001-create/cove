@@ -217,7 +217,7 @@ func (s *Server) medTaken(w http.ResponseWriter, r *http.Request, u user) {
 		jsonError(w, http.StatusBadRequest, "Which day and time?")
 		return
 	}
-	row, ok := s.hhRow("med", r.PathValue("id"))
+	row, ok := s.homeRow(u, "med", r.PathValue("id"))
 	if !ok || row.Private && row.Owner != u.Name {
 		jsonError(w, http.StatusNotFound, "That medicine is gone.")
 		return
@@ -269,7 +269,7 @@ func (s *Server) pantryUse(w http.ResponseWriter, r *http.Request, u user) {
 		jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	row, ok := s.hhRow("pantry", r.PathValue("id"))
+	row, ok := s.homeRow(u, "pantry", r.PathValue("id"))
 	if !ok {
 		jsonError(w, http.StatusNotFound, "That's gone from the pantry.")
 		return
@@ -357,7 +357,7 @@ func (j *journal) label() string { return firstLine(j.Text) }
 
 // journalPhoto shows a photo in a journal entry, from its author's files.
 func (s *Server) journalPhoto(w http.ResponseWriter, r *http.Request, u user) {
-	row, ok := s.hhRow("journal", r.PathValue("id"))
+	row, ok := s.homeRow(u, "journal", r.PathValue("id"))
 	if !ok || row.Private && row.Owner != u.Name {
 		http.NotFound(w, r)
 		return
@@ -517,6 +517,9 @@ func (s *Server) sendBriefings(from, to time.Time) {
 	}
 	rows.Close()
 	for _, x := range list {
+		if homes := s.homesOf(x.u.Name); len(homes) > 0 {
+			x.u.Home = homes[0].ID // the briefing is about their first household
+		}
 		loc := s.location(x.u.Name)
 		h, m, ok := strings.Cut(x.when, ":")
 		hh, err1 := strconv.Atoi(h)
@@ -533,7 +536,7 @@ func (s *Server) sendBriefings(from, to time.Time) {
 	}
 }
 
-func (s *Server) briefingNow(w http.ResponseWriter, r *http.Request, u user) {
+func (s *Server) briefingNow(w http.ResponseWriter, r *http.Request, u user) { // (for the household being looked at)
 	loc := s.location(u.Name)
 	now := time.Now().In(loc)
 	writeJSON(w, http.StatusOK, map[string]string{"text": s.briefing(u, time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc))})

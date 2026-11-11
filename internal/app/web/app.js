@@ -44,6 +44,7 @@ function refreshSoon() { clearTimeout(refreshTimer); refreshTimer = setTimeout((
 
 async function boot() {
   try { S.me = await api("GET", "/api/me"); } catch (e) { return; }
+  try { if (S.me.household && localStorage.getItem("cove.home") !== String(S.me.household)) localStorage.setItem("cove.home", String(S.me.household)); } catch (_) {}
   if (S.me.office) api("GET", "/api/office").then(d => { S.officeExts = new Set(d.exts); }).catch(() => {});
   drawShell();
   addEventListener("hashchange", route);
@@ -60,6 +61,7 @@ function drawShell() {
   const name = u.display || u.name;
   $("side").replaceChildren(
     el("div", { class: "brand" }, el("img", { src: "/assets/icon.svg", alt: "" }), "Cove"),
+    homeSwitch(),
     el("button", { class: "btn primary newbtn", onclick: e => globalNew(e.currentTarget) }, icon("plus"), "New"),
     buildMenu(),
     el("div", { class: "grow" }),
@@ -85,6 +87,11 @@ function drawShell() {
 }
 
 function route() {
+  const sec = (location.hash || "#/home").split("/")[1] || "home";
+  Promise.resolve(routeTo()).then(() => markWho(sec)).catch(() => {});
+}
+
+function routeTo() {
   const h = location.hash || "#/home";
   const [, section, ...rest] = h.split("/");
   document.querySelectorAll("[data-nav]").forEach(b => b.classList.toggle("on", b.dataset.nav === (section === "search" ? "files" : section)));
@@ -116,6 +123,7 @@ function route() {
     case "sitter": return showSitter(c);
     case "print": return showPrint(c);
     case "rides": return showRides(c);
+    case "sharing": return showSharing(c);
     case "year": return showYear(c, rest);
     case "inventory": return showInventory(c);
     case "wishes": return showWishes(c);
@@ -170,6 +178,7 @@ async function showFiles(c, path) {
   S.edit = data.edit !== false;
   try { S.favs = new Set((await api("GET", "/api/favorites")).map(f => (f.share || "") + "|" + f.path)); } catch (_) { /* no stars */ }
   S.items = data.items.map(it => ({ ...it, path: joinPath(path, it.name) }));
+  S.sharing = data.sharing || {};
   for (const p of [...S.sel]) if (!S.items.some(it => it.path === p)) S.sel.delete(p);
   drawFiles(c);
 }
@@ -284,7 +293,8 @@ function listRow(it) {
     ? el("img", { src: files.thumb(it.path, 80), loading: "lazy", alt: "", onerror: e => e.target.replaceWith(kindIcon("image")) }) : kindIcon(it.kind);
   const row = el("div", { class: "lrow" + (S.sel.has(it.path) ? " sel" : "") },
     checkbox(it),
-    el("div", { class: "name" }, thumb, el("span", { text: it.name, title: it.name }), S.favs.has(favKey(it.path)) ? el("span", { class: "star" }, icon("star")) : null),
+    el("div", { class: "name" }, thumb, el("span", { text: it.name, title: it.name }), S.favs.has(favKey(it.path)) ? el("span", { class: "star" }, icon("star")) : null,
+      !S.share && S.sharing && S.sharing[it.name] ? el("span", { class: "pill sharedpill", title: "Shared with " + S.sharing[it.name] }, "👥 " + S.sharing[it.name]) : null),
     el("div", { class: "size", text: it.dir ? "" : fmtSize(it.size) }),
     el("div", { class: "date", text: fmtDate(it.mod) }),
     el("button", { class: "btn ghost icon more", "aria-label": "More", onclick: e => { e.stopPropagation(); itemMenu(e.currentTarget, it); } }, icon("more")));
@@ -1617,6 +1627,8 @@ async function showHome(c) {
   const shared = h.shared.length ? el("div", { class: "hlist" }, h.shared.map(sh => fileRow(sh, () => goFolder("/", String(sh.id)), "From " + sh.who + " · " + fmtDate(sh.created * 1000)))) : empty("Nothing shared with you yet.");
   const favs = h.favorites.length ? el("div", { class: "hfavs" }, h.favorites.map(f => el("button", { class: "fav", onclick: () => openEntry(f) }, kindIcon(f.kind), el("span", { text: f.name })))) : empty("Star files and folders from their ⋯ menu to keep them here.");
   c.replaceChildren(...[
+    (S.me.homes || []).length ? null : el("div", { class: "card notice", style: { marginBottom: "14px" } }, el("b", { text: "You're not in a household yet. " }),
+      "Your own files, calendars and notes work already; the Fridge, Family chat, meals and chores appear once an admin adds you to your household."),
     el("div", { class: "hello" }, el("h1", { text: `${h.greeting}, ${name}` }), el("p", { class: "muted", text: new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }) + (h.unread ? ` · ${h.unread} new notification${h.unread > 1 ? "s" : ""}` : "") })),
     S.me.ai ? el("form", { class: "askbar card", onsubmit: e => { e.preventDefault(); const v = e.target.q.value.trim(); if (!v) return; location.hash = "#/ask"; setTimeout(() => { const t = document.querySelector(".askcard textarea"); if (t) { t.value = v; t.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" })); } }, 300); } },
       icon("search"), el("input", { name: "q", placeholder: "Ask Cove anything: when's the dentist? what's for dinner?" }), el("button", { class: "btn primary", text: "Ask" })) : null,
@@ -1793,6 +1805,7 @@ async function showAdmin(c) {
           u.admin ? null : el("label", { class: "check", style: { justifyContent: "flex-end", margin: "4px 0 0" } }, el("input", { type: "checkbox", checked: u.guest, onchange: async e => {
             try { await api("PUT", `/api/admin/users/${encodeURIComponent(u.name)}/guest`, { guest: e.target.checked }); toast(e.target.checked ? (u.display || u.name) + " is a family guest: calendar, shared albums, the fridge and chat" : "A regular account again"); showAdmin(c); } catch (err) { fail(err); }
           } }), "Family guest (grandparents)")))))),
+    householdsAdmin(),
     aiAdmin(),
     connectAdmin(),
     callAdmin(),
@@ -2121,7 +2134,7 @@ const OFFQ = {
     localStorage.setItem("cove.offline", "[]");
     let sent = 0;
     for (const r of l) {
-      try { const res = await fetch(r.url, { method: r.method, headers: { "X-Cove": "1", "Content-Type": r.type || "application/json" }, body: r.body }); if (res.ok) sent++; }
+      try { const res = await fetch(r.url, { method: r.method, headers: { "X-Cove": "1", "X-Cove-Household": r.home || coveHome(), "Content-Type": r.type || "application/json" }, body: r.body }); if (res.ok) sent++; }
       catch (_) { OFFQ.add(r); }
     }
     if (sent) { toast(`Synced ${sent} change${sent > 1 ? "s" : ""} made offline`); route(); }

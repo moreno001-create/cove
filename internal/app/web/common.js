@@ -122,15 +122,18 @@ function parentOf(p) { const i = p.lastIndexOf("/"); return i <= 0 ? "/" : p.sli
 function baseName(p) { return p.slice(p.lastIndexOf("/") + 1); }
 function extOf(name) { const i = name.lastIndexOf("."); return i > 0 ? name.slice(i + 1).toLowerCase() : ""; }
 
+// coveHome is the household being looked at (for people in more than one), sent with every request.
+function coveHome() { try { return localStorage.getItem("cove.home") || ""; } catch (_) { return ""; } }
+
 async function api(method, url, body) {
-  const opts = { method, headers: { "X-Cove": "1" } };
+  const opts = { method, headers: { "X-Cove": "1", "X-Cove-Household": coveHome() } };
   if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
   let r;
   try { r = await fetch(url, opts); }
   catch (e) {
     // offline: changes to tasks and the fridge wait on this device (see OFFQ in app.js)
     if (method !== "GET" && /^\/api\/(tasks|fridge)/.test(url) && typeof OFFQ !== "undefined") {
-      OFFQ.add({ method, url, body: opts.body });
+      OFFQ.add({ method, url, body: opts.body, home: coveHome() });
       toast("Saved on this device; it syncs when you're back online");
       return {};
     }
@@ -463,6 +466,7 @@ function xhrSend(method, url, body, onProgress, headers) {
     const x = new XMLHttpRequest();
     x.open(method, url);
     x.setRequestHeader("X-Cove", "1");
+    x.setRequestHeader("X-Cove-Household", coveHome());
     for (const [k, v] of Object.entries(headers || {})) x.setRequestHeader(k, v);
     if (onProgress) x.upload.onprogress = e => onProgress(e.loaded);
     x.onload = () => {

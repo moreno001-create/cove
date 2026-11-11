@@ -74,7 +74,7 @@ func openDB(path string) (*sql.DB, error) {
 	// One connection: SQLite writes one at a time anyway, and this keeps "database is locked" away.
 	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(schema + uploadsSchema + accessSchema + calendarsSchema + contactsSchema + notifySchema + invitesSchema + itemTrashSchema + homeSchema + searchSchema + notesSchema +
-		pushSchema + subscriptionsSchema + groupsSchema + activitySchema + hashesSchema + fridgeSchema + householdSchema + chatSchema + photosSchema + aiSchema + settingsSchema + familySchema + extrasSchema + batch4Schema + batch5Schema); err != nil {
+		pushSchema + subscriptionsSchema + groupsSchema + activitySchema + hashesSchema + fridgeSchema + householdSchema + chatSchema + photosSchema + aiSchema + settingsSchema + familySchema + extrasSchema + batch4Schema + batch5Schema + householdsSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("setting up the database: %w", err)
 	}
@@ -83,5 +83,6 @@ func openDB(path string) (*sql.DB, error) {
 	migrateGroups(db)
 	migrateHousehold(db)
 	migrateFamily(db)
+	migrateHouseholds(db)
 	return db, nil
 }

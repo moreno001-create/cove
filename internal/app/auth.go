@@ -32,6 +32,8 @@ type user struct {
 	Admin   bool   `json:"admin"` // in Homeport's admins group
 	Kid     bool   `json:"kid"`   // an admin made this a kid's account: a simpler Cove, no money or public links
 	Guest   bool   `json:"guest"` // family who don't live here (grandparents): the calendar, shared albums, the fridge, chat
+	// Home is the household this request is about (0: none); see households.go.
+	Home int64 `json:"-"`
 	// Groups are the Homeport groups signing in reported (nil: unknown, leave them as they are).
 	Groups []string `json:"-"`
 }
@@ -83,6 +85,7 @@ func (s *Server) api(h func(http.ResponseWriter, *http.Request, user)) http.Hand
 			jsonError(w, http.StatusForbidden, "Changes need the X-Cove header.")
 			return
 		}
+		u.Home = s.homeFor(r, u.Name)
 		if u.Guest && !u.Admin && !guestMay(r) {
 			jsonError(w, http.StatusForbidden, "That part of Cove is for the people who live here.")
 			return
@@ -95,6 +98,11 @@ func (s *Server) api(h func(http.ResponseWriter, *http.Request, user)) http.Hand
 func (s *Server) ensureUser(u user) error {
 	if !validUser(u.Name) {
 		return fmt.Errorf("%q can't be a Cove user name", u.Name)
+	}
+	var known int
+	s.db.QueryRow(`SELECT count(*) FROM users WHERE name = ?`, u.Name).Scan(&known)
+	if known == 0 {
+		defer s.firstSignIn(u.Name)
 	}
 	_, err := s.db.Exec(`INSERT INTO users (name, display, email, admin, created, seen) VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET display = excluded.display, email = excluded.email, admin = excluded.admin, seen = excluded.seen`,
@@ -117,7 +125,14 @@ func (s *Server) ensureUser(u user) error {
 }
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request, u user) {
-	writeJSON(w, http.StatusOK, map[string]any{"user": u, "url": s.cfg.URL, "office": s.cfg.Collabora != "",
+	homes := s.homesOf(u.Name)
+	if homes == nil {
+		homes = []household{}
+	}
+	for i := range homes {
+		homes[i].Members = s.membersOf(homes[i].ID)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": u, "url": s.cfg.URL, "office": s.cfg.Collabora != "", "homes": homes, "household": u.Home,
 		"version": s.cfg.Version, "devMode": s.cfg.DevUser != "", "ai": s.aiConfig().on(), "smart": s.aiConfig().Embed != "", "ocr": ocrAvailable(),
 		"home": s.haConfig().Token != "" && len(s.haConfig().Entities) > 0, "jellyfin": s.jellyConfig().Key != "", "call": s.setting("call.url") != "", "vision": s.aiConfig().Vision != "",
 		"backups": s.offsiteConfig().Repo != ""})

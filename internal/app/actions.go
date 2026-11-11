@@ -89,12 +89,12 @@ func errorOf(b []byte) string {
 }
 
 // person finds a household member by name or display name ("" if nobody matches).
-func (s *Server) person(name string) string {
+func (s *Server) person(home int64, name string) string {
 	name = strings.TrimSpace(strings.ToLower(name))
 	if name == "" || name == "me" {
 		return ""
 	}
-	for _, n := range s.everyone() {
+	for _, n := range s.members(home) {
 		if strings.ToLower(n) == name || strings.ToLower(s.displayOf(n)) == name {
 			return n
 		}
@@ -167,7 +167,7 @@ func (s *Server) act(ctx context.Context, u user, name, args string) string {
 		if d := get("due"); validDate(d) {
 			in["due"] = d
 		}
-		if who := s.person(get("for")); who != "" {
+		if who := s.person(u.Home, get("for")); who != "" {
 			in["assignee"] = who
 		}
 		note := ""
@@ -204,7 +204,7 @@ func (s *Server) act(ctx context.Context, u user, name, args string) string {
 		if c.Repeat == "weekly" || c.Repeat == "" {
 			c.Repeat = fmt.Sprintf("weekly:%d", int(time.Now().In(loc).Weekday()))
 		}
-		if who := s.person(get("who")); who != "" {
+		if who := s.person(u.Home, get("who")); who != "" {
 			c.Who = []string{who}
 		}
 		return s.hhAct(u, "chore", c, "Added the chore “"+c.Title+"”.")

@@ -424,10 +424,11 @@ func (x *reward) clean() error {
 func (x *reward) label() string { return x.Title }
 
 // points is how many chore points someone has to spend: all earned, less what's spent or waiting for a yes.
-func (s *Server) points(name string) int {
+// (points are earned and spent in one household)
+func (s *Server) points(home int64, name string) int {
 	var earned, spent int
-	s.db.QueryRow(`SELECT coalesce(sum(points), 0) FROM chore_done WHERE user = ?`, name).Scan(&earned)
-	s.db.QueryRow(`SELECT coalesce(sum(points), 0) FROM reward_claims WHERE user = ? AND status != 'no'`, name).Scan(&spent)
+	s.db.QueryRow(`SELECT coalesce(sum(d.points), 0) FROM chore_done d JOIN hh h ON h.id = d.chore WHERE d.user = ? AND h.household = ?`, name, home).Scan(&earned)
+	s.db.QueryRow(`SELECT coalesce(sum(points), 0) FROM reward_claims WHERE user = ? AND household = ? AND status != 'no'`, name, home).Scan(&spent)
 	return earned - spent
 }
 
@@ -444,7 +445,7 @@ type claim struct {
 }
 
 func (s *Server) rewardsShop(w http.ResponseWriter, r *http.Request, u user) {
-	rows, err := s.db.Query(`SELECT id, reward, title, user, points, at, status, by FROM reward_claims ORDER BY at DESC LIMIT 100`)
+	rows, err := s.db.Query(`SELECT id, reward, title, user, points, at, status, by FROM reward_claims WHERE household = ? ORDER BY at DESC LIMIT 100`, u.Home)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -461,37 +462,37 @@ func (s *Server) rewardsShop(w http.ResponseWriter, r *http.Request, u user) {
 		claims[i].Who = s.displayOf(claims[i].User)
 	}
 	balances := map[string]int{}
-	for _, n := range s.everyone() {
+	for _, n := range s.members(u.Home) {
 		if !u.Kid || n == u.Name {
-			balances[n] = s.points(n)
+			balances[n] = s.points(u.Home, n)
 		}
 	}
 	list := []map[string]any{}
 	for _, x := range hhItems[reward](s, u, "reward") {
 		list = append(list, s.hhJSON(x.hhRow))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"rewards": list, "claims": claims, "points": balances, "mine": s.points(u.Name)})
+	writeJSON(w, http.StatusOK, map[string]any{"rewards": list, "claims": claims, "points": balances, "mine": s.points(u.Home, u.Name)})
 }
 
 func (s *Server) claimReward(w http.ResponseWriter, r *http.Request, u user) {
-	row, ok := s.hhRow("reward", r.PathValue("id"))
+	row, ok := s.homeRow(u, "reward", r.PathValue("id"))
 	if !ok {
 		jsonError(w, http.StatusNotFound, "That reward is gone.")
 		return
 	}
 	var x reward
 	json.Unmarshal(row.Data, &x)
-	if have := s.points(u.Name); have < x.Points {
+	if have := s.points(u.Home, u.Name); have < x.Points {
 		jsonError(w, http.StatusBadRequest, fmt.Sprintf("That's %d points; you have %d.", x.Points, have))
 		return
 	}
-	s.db.Exec(`INSERT INTO reward_claims (reward, title, user, points, at) VALUES (?, ?, ?, ?, ?)`, row.ID, x.Title, u.Name, x.Points, time.Now().Unix())
-	for _, a := range s.everyone() {
+	s.db.Exec(`INSERT INTO reward_claims (household, reward, title, user, points, at) VALUES (?, ?, ?, ?, ?, ?)`, u.Home, row.ID, x.Title, u.Name, x.Points, time.Now().Unix())
+	for _, a := range s.members(u.Home) {
 		if a != u.Name && !s.isKid(a) {
 			s.notify(a, fmt.Sprintf("%s wants a reward: %s (%d points)", displayName(u), x.Title, x.Points), "#/chores")
 		}
 	}
-	s.changed("household", s.everyone()...)
+	s.changed("household", s.members(u.Home)...)
 	writeJSON(w, http.StatusCreated, map[string]bool{"ok": true})
 }
 
@@ -511,7 +512,7 @@ func (s *Server) answerClaim(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	readJSON(r, &in)
 	var who, title, status string
-	if s.db.QueryRow(`SELECT user, title, status FROM reward_claims WHERE id = ?`, r.PathValue("id")).Scan(&who, &title, &status) != nil || status != "waiting" {
+	if s.db.QueryRow(`SELECT user, title, status FROM reward_claims WHERE id = ? AND household = ?`, r.PathValue("id"), u.Home).Scan(&who, &title, &status) != nil || status != "waiting" {
 		jsonError(w, http.StatusNotFound, "That's been answered already.")
 		return
 	}
@@ -522,7 +523,7 @@ func (s *Server) answerClaim(w http.ResponseWriter, r *http.Request, u user) {
 	} else {
 		s.notify(who, fmt.Sprintf("%s said not this time: %s (your points are back)", displayName(u), title), "#/chores")
 	}
-	s.changed("household", s.everyone()...)
+	s.changed("household", s.members(u.Home)...)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -623,7 +624,7 @@ func wifiQR(ssid, password, security string) string {
 // the first item its password).
 func (s *Server) fridgeWifi(w http.ResponseWriter, r *http.Request, u user) {
 	var kind, text, items string
-	if s.db.QueryRow(`SELECT kind, text, items FROM fridge WHERE id = ?`, r.PathValue("id")).Scan(&kind, &text, &items) != nil || kind != "wifi" {
+	if s.db.QueryRow(`SELECT kind, text, items FROM fridge WHERE id = ? AND household = ?`, r.PathValue("id"), u.Home).Scan(&kind, &text, &items) != nil || kind != "wifi" {
 		http.NotFound(w, r)
 		return
 	}

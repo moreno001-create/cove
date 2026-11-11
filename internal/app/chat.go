@@ -40,8 +40,9 @@ CREATE TABLE IF NOT EXISTS chat_read (
 
 type chatRoom struct {
 	ID        int64    `json:"id"`
+	Household int64    `json:"household"`
 	Name      string   `json:"name"`
-	Members   []string `json:"members"` // empty: everyone
+	Members   []string `json:"members"` // empty: everyone in the household
 	CreatedBy string   `json:"createdBy"`
 	Unread    int      `json:"unread"`
 	Last      string   `json:"last"`
@@ -54,11 +55,14 @@ func (r chatRoom) has(name string) bool {
 }
 
 func (s *Server) chatRooms(u user) []chatRoom {
-	var n int
-	if s.db.QueryRow(`SELECT count(*) FROM chat_rooms`).Scan(&n); n == 0 {
-		s.db.Exec(`INSERT INTO chat_rooms (name, created_by, created) VALUES ('Family', '', ?)`, time.Now().Unix())
+	if u.Home == 0 {
+		return []chatRoom{}
 	}
-	rows, err := s.db.Query(`SELECT id, name, members, created_by FROM chat_rooms ORDER BY id`)
+	var n int
+	if s.db.QueryRow(`SELECT count(*) FROM chat_rooms WHERE household = ? AND members = ''`, u.Home).Scan(&n); n == 0 { // each household's own Family room
+		s.db.Exec(`INSERT INTO chat_rooms (household, name, created_by, created) VALUES (?, 'Family', '', ?)`, u.Home, time.Now().Unix())
+	}
+	rows, err := s.db.Query(`SELECT id, household, name, members, created_by FROM chat_rooms WHERE household = ? ORDER BY id`, u.Home)
 	if err != nil {
 		return nil
 	}
@@ -66,7 +70,7 @@ func (s *Server) chatRooms(u user) []chatRoom {
 	for rows.Next() {
 		var r chatRoom
 		var members string
-		if rows.Scan(&r.ID, &r.Name, &members, &r.CreatedBy) == nil {
+		if rows.Scan(&r.ID, &r.Household, &r.Name, &members, &r.CreatedBy) == nil {
 			json.Unmarshal([]byte(members), &r.Members)
 			if r.Members == nil {
 				r.Members = []string{}
@@ -108,7 +112,7 @@ func (s *Server) listChat(w http.ResponseWriter, r *http.Request, u user) {
 
 func (s *Server) roomMembers(r chatRoom) []string {
 	if len(r.Members) == 0 {
-		return s.everyone()
+		return s.members(r.Household)
 	}
 	return r.Members
 }
@@ -122,7 +126,10 @@ func (s *Server) createRoom(w http.ResponseWriter, r *http.Request, u user) {
 		jsonError(w, http.StatusBadRequest, "Give the room a name.")
 		return
 	}
-	members := trimList(in.Members, 50)
+	if !needHome(w, u) {
+		return
+	}
+	members := slices.DeleteFunc(trimList(in.Members, 50), func(n string) bool { return !s.inHousehold(u.Home, n) })
 	if len(members) > 0 && !slices.Contains(members, u.Name) {
 		members = append(members, u.Name)
 	}
@@ -130,13 +137,13 @@ func (s *Server) createRoom(w http.ResponseWriter, r *http.Request, u user) {
 	if len(members) == 0 {
 		m = []byte("")
 	}
-	res, err := s.db.Exec(`INSERT INTO chat_rooms (name, members, created_by, created) VALUES (?, ?, ?, ?)`, clip(in.Name, 100), string(m), u.Name, time.Now().Unix())
+	res, err := s.db.Exec(`INSERT INTO chat_rooms (household, name, members, created_by, created) VALUES (?, ?, ?, ?, ?)`, u.Home, clip(in.Name, 100), string(m), u.Name, time.Now().Unix())
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	id, _ := res.LastInsertId()
-	room := chatRoom{ID: id, Name: clip(in.Name, 100), Members: members}
+	room := chatRoom{ID: id, Household: u.Home, Name: clip(in.Name, 100), Members: members}
 	s.changed("chat", s.roomMembers(room)...)
 	writeJSON(w, http.StatusCreated, room)
 }

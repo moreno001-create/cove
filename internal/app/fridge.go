@@ -56,8 +56,8 @@ type fridgeNote struct {
 
 func (s *Server) fridgeNotes(u user, limit int) []fridgeNote {
 	rows, err := s.db.Query(`SELECT f.id, f.author, coalesce(nullif(x.display, ''), f.author), f.kind, f.text, f.color, f.items, f.date, f.photo != '', f.pinned, f.created, f.expires
-		FROM fridge f LEFT JOIN users x ON x.name = f.author WHERE f.expires = 0 OR f.expires > ? ORDER BY f.pinned DESC, f.created DESC LIMIT ?`,
-		time.Now().Unix(), limit)
+		FROM fridge f LEFT JOIN users x ON x.name = f.author WHERE f.household = ? AND (f.expires = 0 OR f.expires > ?) ORDER BY f.pinned DESC, f.created DESC LIMIT ?`,
+		u.Home, time.Now().Unix(), limit)
 	if err != nil {
 		return nil
 	}
@@ -98,13 +98,13 @@ func everyoneBut(db *sql.DB, name string) []string {
 
 // putUp tells the household something went on the fridge (at most every few minutes per person).
 func (s *Server) putUp(u user, what, detail string) {
-	others := everyoneBut(s.db, u.Name)
+	others := s.othersIn(u.Home, u.Name)
 	if s.once("fridge|"+u.Name, 5*time.Minute) {
 		for _, o := range others {
 			s.notify(o, fmt.Sprintf("%s put %s on the fridge%s", displayName(u), what, detail), "#/fridge")
 		}
 	}
-	s.changed("fridge", append(others, u.Name)...)
+	s.changed("fridge", s.members(u.Home)...)
 }
 
 type fridgeInput struct {
@@ -141,6 +141,7 @@ func (s *Server) addFridge(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	in.clean()
+	var countdownEnd int64
 	switch in.Kind {
 	case "list", "note":
 	case "poll":
@@ -164,9 +165,9 @@ func (s *Server) addFridge(w http.ResponseWriter, r *http.Request, u user) {
 			jsonError(w, http.StatusBadRequest, "A countdown needs a name and a day.")
 			return
 		}
-		if in.ExpiresDays == 0 { // comes down the day after
+		if in.ExpiresDays == 0 { // comes down when its day is over
 			d, _ := time.ParseInLocation("2006-01-02", in.Date, s.location(u.Name))
-			in.ExpiresDays = max(1, int(time.Until(d.AddDate(0, 0, 1)).Hours()/24)+1)
+			countdownEnd = d.AddDate(0, 0, 1).Unix()
 		}
 	default:
 		in.Kind = "note"
@@ -183,7 +184,10 @@ func (s *Server) addFridge(w http.ResponseWriter, r *http.Request, u user) {
 	if in.ExpiresDays > 0 {
 		expires = time.Now().AddDate(0, 0, in.ExpiresDays).Unix()
 	}
-	res, err := s.db.Exec(`INSERT INTO fridge (author, kind, text, color, items, date, pinned, created, expires) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	if countdownEnd > 0 {
+		expires = countdownEnd
+	}
+	res, err := s.db.Exec(`INSERT INTO fridge (household, author, kind, text, color, items, date, pinned, created, expires) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, u.Home,
 		u.Name, in.Kind, in.Text, in.Color, string(items), in.Date, in.Pinned, time.Now().Unix(), expires)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
@@ -232,7 +236,7 @@ func (s *Server) addFridgePhoto(w http.ResponseWriter, r *http.Request, u user) 
 		expires = time.Now().AddDate(0, 0, days).Unix()
 	}
 	caption := strings.TrimSpace(r.URL.Query().Get("caption"))
-	res, err := s.db.Exec(`INSERT INTO fridge (author, kind, text, color, photo, created, expires) VALUES (?, 'photo', ?, 'white', ?, ?, ?)`,
+	res, err := s.db.Exec(`INSERT INTO fridge (household, author, kind, text, color, photo, created, expires) VALUES (?, ?, 'photo', ?, 'white', ?, ?, ?)`, u.Home,
 		u.Name, caption, name, time.Now().Unix(), expires)
 	if err != nil {
 		s.data.Remove(name)
@@ -250,7 +254,7 @@ func (s *Server) addFridgePhoto(w http.ResponseWriter, r *http.Request, u user) 
 
 func (s *Server) fridgePhoto(w http.ResponseWriter, r *http.Request, u user) {
 	var name string
-	if s.db.QueryRow(`SELECT photo FROM fridge WHERE id = ?`, r.PathValue("id")).Scan(&name) != nil || name == "" {
+	if s.db.QueryRow(`SELECT photo FROM fridge WHERE id = ? AND household = ?`, r.PathValue("id"), u.Home).Scan(&name) != nil || name == "" {
 		http.NotFound(w, r)
 		return
 	}
@@ -270,7 +274,7 @@ func (s *Server) updateFridge(w http.ResponseWriter, r *http.Request, u user) {
 	var pinned bool
 	var expires int64
 	id := r.PathValue("id")
-	if s.db.QueryRow(`SELECT author, text, color, pinned, expires, kind, items, date FROM fridge WHERE id = ?`, id).Scan(&author, &text, &color, &pinned, &expires, &kind, &oldItems, &date) != nil {
+	if s.db.QueryRow(`SELECT author, text, color, pinned, expires, kind, items, date FROM fridge WHERE id = ? AND household = ?`, id, u.Home).Scan(&author, &text, &color, &pinned, &expires, &kind, &oldItems, &date) != nil {
 		jsonError(w, http.StatusNotFound, "That isn't on the fridge any more.")
 		return
 	}
@@ -309,7 +313,7 @@ func (s *Server) updateFridge(w http.ResponseWriter, r *http.Request, u user) {
 		}
 	}
 	s.db.Exec(`UPDATE fridge SET text = ?, color = ?, items = ?, date = ?, pinned = ?, expires = ? WHERE id = ?`, text, color, string(items), date, pinned, expires, id)
-	s.changed("fridge", append(everyoneBut(s.db, u.Name), u.Name)...)
+	s.changed("fridge", s.members(u.Home)...)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -323,7 +327,7 @@ func (s *Server) voteFridge(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	var items, kind string
-	if s.db.QueryRow(`SELECT items, kind FROM fridge WHERE id = ?`, r.PathValue("id")).Scan(&items, &kind) != nil || kind != "poll" {
+	if s.db.QueryRow(`SELECT items, kind FROM fridge WHERE id = ? AND household = ?`, r.PathValue("id"), u.Home).Scan(&items, &kind) != nil || kind != "poll" {
 		jsonError(w, http.StatusNotFound, "That poll isn't on the fridge any more.")
 		return
 	}
@@ -342,13 +346,13 @@ func (s *Server) voteFridge(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	b, _ := json.Marshal(list)
 	s.db.Exec(`UPDATE fridge SET items = ? WHERE id = ?`, string(b), r.PathValue("id"))
-	s.changed("fridge", s.everyone()...)
+	s.changed("fridge", s.members(u.Home)...)
 	writeJSON(w, http.StatusOK, list)
 }
 
 func (s *Server) removeFridge(w http.ResponseWriter, r *http.Request, u user) {
 	var author, photo string
-	if s.db.QueryRow(`SELECT author, photo FROM fridge WHERE id = ?`, r.PathValue("id")).Scan(&author, &photo) != nil {
+	if s.db.QueryRow(`SELECT author, photo FROM fridge WHERE id = ? AND household = ?`, r.PathValue("id"), u.Home).Scan(&author, &photo) != nil {
 		jsonError(w, http.StatusNotFound, "That isn't on the fridge any more.")
 		return
 	}
@@ -360,7 +364,7 @@ func (s *Server) removeFridge(w http.ResponseWriter, r *http.Request, u user) {
 	if photo != "" {
 		s.data.Remove(photo)
 	}
-	s.changed("fridge", append(everyoneBut(s.db, u.Name), u.Name)...)
+	s.changed("fridge", s.members(u.Home)...)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

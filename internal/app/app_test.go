@@ -691,7 +691,16 @@ func newPeople(t *testing.T, mod func(*Config), names ...string) *people {
 		r.s.db.Exec(`INSERT INTO sessions (id, user, expires) VALUES (?, ?, ?)`, hashHex(tok), n, time.Now().Add(time.Hour).Unix())
 		p.cookie[n] = tok
 	}
+	// the test family is one household (the first person made it; Cove waits for an admin to add the others)
+	r.s.db.Exec(`INSERT OR IGNORE INTO household_members (household, user, added) SELECT (SELECT min(id) FROM households), name, 0 FROM users`)
 	return p
+}
+
+// home is the test household's id.
+func (p *people) home() int64 {
+	var id int64
+	p.s.db.QueryRow(`SELECT min(id) FROM households`).Scan(&id)
+	return id
 }
 
 func (p *people) as(who, method, path string, body any, out any) int {
